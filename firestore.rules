@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions for zero-trust validation
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidProduct(data) {
+      return data.ProductID is string && data.ProductID.size() <= 128
+        && data.ProductCode is string && data.ProductCode.size() > 0 && data.ProductCode.size() <= 64
+        && data.ProductName is string && data.ProductName.size() > 0 && data.ProductName.size() <= 200
+        && (!('Status' in data) || data.Status in ['active', 'inactive'])
+        && (!('Variants' in data) || (data.Variants is list && data.Variants.size() <= 100))
+        && (!('Images' in data) || (data.Images is list && data.Images.size() <= 10));
+    }
+
+    function isValidOrder(data) {
+      return data.OrderID is string && data.OrderID.size() <= 128
+        && data.OrderDate is string && data.OrderDate.size() <= 64
+        && data.CustomerName is string && data.CustomerName.size() <= 200
+        && data.Total is number && data.Total >= 0
+        && (!('Status' in data) || data.Status in ['completed', 'pending', 'cancelled'])
+        && (!('Items' in data) || (data.Items is list && data.Items.size() <= 150));
+    }
+
+    function isValidTransaction(data) {
+      return data.TransactionID is string && data.TransactionID.size() <= 128
+        && data.TransactionDate is string && data.TransactionDate.size() <= 64
+        && data.ProductCode is string && data.ProductCode.size() <= 64
+        && data.Quantity is number
+        && data.TransactionType is string && data.TransactionType.size() <= 64;
+    }
+
+    function isValidCustomer(data) {
+      return data.CustomerID is string && data.CustomerID.size() <= 128
+        && data.CustomerName is string && data.CustomerName.size() > 0 && data.CustomerName.size() <= 200;
+    }
+
+    function isValidDressType(data) {
+      return data.DressTypeID is string && data.DressTypeID.size() <= 128
+        && data.Name is string && data.Name.size() > 0 && data.Name.size() <= 100;
+    }
+
+    function isValidSize(data) {
+      return data.SizeID is string && data.SizeID.size() <= 128
+        && data.Name is string && data.Name.size() > 0 && data.Name.size() <= 50;
+    }
+
+    function isValidColor(data) {
+      return data.ColorID is string && data.ColorID.size() <= 128
+        && data.Name is string && data.Name.size() > 0 && data.Name.size() <= 50;
+    }
+
+    function isValidSettings(data) {
+      return !('StoreName' in data) || (data.StoreName is string && data.StoreName.size() <= 150);
+    }
+
+    function isValidUser(data) {
+      return data.userId is string && data.userId.size() <= 128
+        && data.userNumber is string && data.userNumber.size() > 0 && data.userNumber.size() <= 50
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 150
+        && data.role in ['admin', 'sales_staff', 'staff']
+        && (!('password' in data) || (data.password is string && data.password.size() <= 128));
+    }
+
+    // Collection Security Rules
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update: if isValidId(productId) && isValidProduct(incoming());
+      allow delete: if isValidId(productId);
+    }
+
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create, update: if isValidId(orderId) && isValidOrder(incoming());
+      allow delete: if isValidId(orderId);
+    }
+
+    match /inventory_transactions/{transactionId} {
+      allow read: if true;
+      allow create, update: if isValidId(transactionId) && isValidTransaction(incoming());
+      allow delete: if isValidId(transactionId);
+    }
+
+    match /customers/{customerId} {
+      allow read: if true;
+      allow create, update: if isValidId(customerId) && isValidCustomer(incoming());
+      allow delete: if isValidId(customerId);
+    }
+
+    match /dress_types/{dressTypeId} {
+      allow read: if true;
+      allow create, update: if isValidId(dressTypeId) && isValidDressType(incoming());
+      allow delete: if isValidId(dressTypeId);
+    }
+
+    match /sizes/{sizeId} {
+      allow read: if true;
+      allow create, update: if isValidId(sizeId) && isValidSize(incoming());
+      allow delete: if isValidId(sizeId);
+    }
+
+    match /colors/{colorId} {
+      allow read: if true;
+      allow create, update: if isValidId(colorId) && isValidColor(incoming());
+      allow delete: if isValidId(colorId);
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update: if isValidId(settingId) && isValidSettings(incoming());
+      allow delete: if isValidId(settingId);
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isValidId(userId) && isValidUser(incoming());
+      allow delete: if isValidId(userId);
+    }
+  }
+}

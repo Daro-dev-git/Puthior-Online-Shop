@@ -1,0 +1,7 @@
+{
+  "name": "Girl Dress Shop",
+  "description": "Professional Online Girl Dress Shop, Inventory Management & POS System for children's fashion businesses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

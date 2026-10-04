@@ -1,0 +1,859 @@
+import React, { useState } from 'react';
+import { useStore } from '../../context/StoreContext';
+import { AppUser } from '../../types';
+import {
+  ShieldCheck,
+  User,
+  Plus,
+  Trash2,
+  Save,
+  Users,
+  Lock,
+  Edit2,
+  X,
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+} from 'lucide-react';
+
+export const SettingsView: React.FC = () => {
+  const {
+    settings,
+    updateSettings,
+    sizes,
+    addSize,
+    deleteSize,
+    colors,
+    addColor,
+    deleteColor,
+    priceCategories,
+    currentUser,
+    users,
+    addUserAccount,
+    updateUserAccount,
+    deleteUserAccount,
+    showToast,
+  } = useStore();
+
+  // Store form state
+  const [storeName, setStoreName] = useState(settings.StoreName);
+  const [tagline, setTagline] = useState(settings.Tagline);
+  const [phone, setPhone] = useState(settings.Phone);
+  const [email, setEmail] = useState(settings.Email);
+  const [address, setAddress] = useState(settings.Address);
+  const [currency, setCurrency] = useState(settings.Currency);
+  const [lowStockThreshold, setLowStockThreshold] = useState(settings.LowStockThreshold);
+  const [receiptFooter, setReceiptFooter] = useState(settings.ReceiptFooterMessage);
+
+  // New size input
+  const [newSizeValue, setNewSizeValue] = useState('');
+
+  // New color input
+  const [newColorName, setNewColorName] = useState('');
+  const [newColorHex, setNewColorHex] = useState('#EC4899');
+
+  // Staff Account Creation modal state
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newStaffNumber, setNewStaffNumber] = useState('');
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<'admin' | 'sales_staff'>('sales_staff');
+  const [newStaffPassword, setNewStaffPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
+
+  // Edit Staff Account modal state
+  const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editNumber, setEditNumber] = useState('');
+  const [editRole, setEditRole] = useState<'admin' | 'sales_staff'>('sales_staff');
+  const [editStatus, setEditStatus] = useState<'active' | 'inactive'>('active');
+  const [editPassword, setEditPassword] = useState('');
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [isSavingUser, setIsSavingUser] = useState(false);
+
+  // In-app Delete User Confirmation state (avoids blocked window.confirm)
+  const [userToDelete, setUserToDelete] = useState<AppUser | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+
+  const handleSaveStoreSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateSettings({
+      StoreName: storeName.trim(),
+      Tagline: tagline.trim(),
+      Phone: phone.trim(),
+      Email: email.trim(),
+      Address: address.trim(),
+      Currency: currency,
+      LowStockThreshold: lowStockThreshold,
+      ReceiptFooterMessage: receiptFooter.trim(),
+    });
+  };
+
+  const handleAddSizeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSizeValue.trim()) return;
+    const res = addSize(newSizeValue.trim());
+    if (res.success) setNewSizeValue('');
+  };
+
+  const handleAddColorSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newColorName.trim()) return;
+    const res = addColor(newColorName.trim(), newColorHex);
+    if (res.success) {
+      setNewColorName('');
+      setNewColorHex('#EC4899');
+    }
+  };
+
+  // Open Edit User Modal
+  const handleOpenEditUser = (user: AppUser) => {
+    setEditingUser(user);
+    setEditName(user.name);
+    setEditNumber(user.userNumber);
+    setEditRole(user.role);
+    setEditStatus(user.status || 'active');
+    setEditPassword(user.password);
+    setShowEditPassword(false);
+  };
+
+  // Save changes to existing user
+  const handleSaveEditedUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    if (!editName.trim() || !editNumber.trim() || !editPassword.trim()) {
+      showToast('Please fill in Name, User Number, and Password', 'error');
+      return;
+    }
+
+    setIsSavingUser(true);
+    try {
+      const res = await updateUserAccount({
+        ...editingUser,
+        name: editName.trim(),
+        userNumber: editNumber.trim(),
+        role: editRole,
+        status: editStatus,
+        password: editPassword.trim(),
+      });
+
+      if (res.success) {
+        setEditingUser(null);
+      } else {
+        showToast(res.error || 'Failed to update user', 'error');
+      }
+    } finally {
+      setIsSavingUser(false);
+    }
+  };
+
+  // Create new staff account
+  const handleCreateStaffAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStaffNumber.trim() || !newStaffName.trim() || !newStaffPassword.trim()) {
+      showToast('Please fill in User Number, Name and Password', 'error');
+      return;
+    }
+
+    setIsSubmittingUser(true);
+    try {
+      const res = await addUserAccount({
+        userNumber: newStaffNumber.trim(),
+        name: newStaffName.trim(),
+        role: newStaffRole,
+        password: newStaffPassword.trim(),
+        phone: newStaffNumber.trim(),
+        status: 'active',
+      });
+
+      if (res.success) {
+        setNewStaffNumber('');
+        setNewStaffName('');
+        setNewStaffPassword('');
+        setShowAddUserModal(false);
+      } else {
+        showToast(res.error || 'Failed to create user', 'error');
+      }
+    } finally {
+      setIsSubmittingUser(false);
+    }
+  };
+
+  // Confirm delete user handler
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeletingUser(true);
+    try {
+      const res = await deleteUserAccount(userToDelete.userId);
+      if (res.success) {
+        setUserToDelete(null);
+      } else {
+        showToast(res.error || 'Failed to delete user', 'error');
+      }
+    } finally {
+      setIsDeletingUser(false);
+    }
+  };
+
+  const isDeletingCurrentUser = userToDelete?.userId === currentUser?.userId;
+  const isOnlyRemainingUser = users.length <= 1;
+
+  return (
+    <div className="space-y-6 max-w-5xl">
+      {/* Header */}
+      <div className="pb-3 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold font-display text-stone-900 tracking-tight">
+            Admin Settings & Staff Management
+          </h1>
+          <p className="text-xs text-stone-500 mt-0.5">
+            Manage authorized staff accounts, database persistence, size and color matrices, and store profile
+          </p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium self-start sm:self-auto">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Cloud Database Active & Synced</span>
+        </div>
+      </div>
+
+      {/* Staff & User Authentication Management */}
+      <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-pink-600" />
+            <h2 className="text-sm font-bold text-stone-900">
+              Staff & User Accounts (Multi-Role Cloud Access)
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setNewStaffNumber('');
+              setNewStaffName('');
+              setNewStaffPassword('');
+              setNewStaffRole('sales_staff');
+              setShowAddUserModal(true);
+            }}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Add Staff Account</span>
+          </button>
+        </div>
+
+        <p className="text-xs text-stone-500">
+          Authorized personnel log in via their assigned <strong>User Number</strong> and <strong>Password</strong>.
+          Admins can edit any staff details, reset passwords, change roles, or remove accounts.
+        </p>
+
+        {/* User Accounts Table */}
+        <div className="overflow-x-auto rounded-lg border border-stone-200">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-stone-50 text-stone-600 uppercase font-semibold text-[10px] tracking-wider border-b border-stone-200">
+              <tr>
+                <th className="px-4 py-2.5">User Number</th>
+                <th className="px-4 py-2.5">Full Name</th>
+                <th className="px-4 py-2.5">Role</th>
+                <th className="px-4 py-2.5">Password</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {users.map((u) => (
+                <tr key={u.userId} className="hover:bg-stone-50/70 transition-colors">
+                  <td className="px-4 py-3 font-mono-numbers font-bold text-stone-900">
+                    #{u.userNumber}
+                  </td>
+                  <td className="px-4 py-3 text-stone-800">
+                    <span className="font-medium">{u.name}</span>
+                    {currentUser?.userId === u.userId && (
+                      <span className="ml-2 text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-medium">
+                        Current Session
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        u.role === 'admin'
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}
+                    >
+                      {u.role === 'admin' ? (
+                        <ShieldCheck className="w-3 h-3" />
+                      ) : (
+                        <User className="w-3 h-3" />
+                      )}
+                      <span>{u.role === 'admin' ? 'Administrator' : 'Sales Staff'}</span>
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-stone-400">
+                    ••••••••
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        u.status === 'active'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-stone-200 text-stone-600'
+                      }`}
+                    >
+                      {u.status === 'active' ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditUser(u)}
+                        className="p-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-md transition-colors cursor-pointer"
+                        title="Edit user details and password"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUserToDelete(u)}
+                        className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                        title="Delete user account"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Edit Staff Account Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 animate-scaleIn">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-pink-600" />
+                <h3 className="text-base font-bold text-stone-900">
+                  Edit Staff Account
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="p-1 text-stone-400 hover:text-stone-600 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedUser} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  User Number / Staff ID (Required)
+                </label>
+                <input
+                  type="text"
+                  value={editNumber}
+                  onChange={(e) => setEditNumber(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Staff Full Name
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">Role</label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value as 'admin' | 'sales_staff')}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  >
+                    <option value="sales_staff">Sales Staff</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as 'active' | 'inactive')}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showEditPassword ? 'text' : 'password'}
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditPassword(!showEditPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-stone-400 hover:text-stone-600"
+                  >
+                    {showEditPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="px-3 py-2 text-stone-600 hover:text-stone-900 text-xs font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingUser}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSavingUser ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Staff Account Modal */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 animate-scaleIn">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-pink-600" />
+                <h3 className="text-base font-bold text-stone-900">
+                  Create New Staff Account
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddUserModal(false)}
+                className="p-1 text-stone-400 hover:text-stone-600 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-stone-500 mb-4">
+              Add a new authorized staff member or administrator. Credentials will be securely saved to the database.
+            </p>
+
+            <form onSubmit={handleCreateStaffAccount} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  User Number / Staff ID (Required)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 1002, 1003"
+                  value={newStaffNumber}
+                  onChange={(e) => setNewStaffNumber(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Staff Full Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Jessica Miller"
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Role</label>
+                <select
+                  value={newStaffRole}
+                  onChange={(e) => setNewStaffRole(e.target.value as 'admin' | 'sales_staff')}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                >
+                  <option value="sales_staff">Sales Staff (POS, Sales & Inventory movements)</option>
+                  <option value="admin">Administrator (Full Access & Cost/Profit Reports)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Initial Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    placeholder="Enter password"
+                    value={newStaffPassword}
+                    onChange={(e) => setNewStaffPassword(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-stone-400 hover:text-stone-600"
+                  >
+                    {showNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserModal(false)}
+                  className="px-3 py-2 text-stone-600 hover:text-stone-900 text-xs font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingUser}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingUser ? 'Saving...' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* In-App Delete User Confirmation Modal (100% reliable, no blocked window.confirm) */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 animate-scaleIn space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-stone-900">
+                  Delete Staff Account
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Permanently remove user from the database
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-stone-500">User Number:</span>
+                <span className="font-mono font-bold text-stone-800">#{userToDelete.userNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Full Name:</span>
+                <span className="font-semibold text-stone-800">{userToDelete.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Role:</span>
+                <span className="capitalize font-medium text-stone-800">
+                  {userToDelete.role === 'admin' ? 'Administrator' : 'Sales Staff'}
+                </span>
+              </div>
+            </div>
+
+            {isDeletingCurrentUser && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Current Active Session</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  You are currently logged in with this account. If you delete it, your session will immediately terminate and you will be returned to the sign-in screen.
+                </p>
+              </div>
+            )}
+
+            {isOnlyRemainingUser && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 space-y-1">
+                <div className="font-bold">Cannot Delete Sole User</div>
+                <p className="text-[11px]">
+                  This is the only remaining account in the database. Please create another administrator account first before deleting this one.
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="px-3 py-2 text-stone-600 hover:text-stone-900 text-xs font-medium cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingUser || isOnlyRemainingUser}
+                onClick={handleConfirmDeleteUser}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeletingUser ? 'Deleting from Cloud...' : 'Delete Account'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Store Master Info Form */}
+      <form
+        onSubmit={handleSaveStoreSettings}
+        className="bg-white p-5 rounded-xl border border-stone-200 shadow-xs space-y-4"
+      >
+        <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+          <h2 className="text-sm font-bold text-stone-900">Store Profile & Receipt Details</h2>
+          <button
+            type="submit"
+            className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>Save Store Info</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Store Name</label>
+            <input
+              type="text"
+              value={storeName}
+              onChange={(e) => setStoreName(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Tagline</label>
+            <input
+              type="text"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Phone</label>
+            <input
+              type="text"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Boutique Address</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Currency Symbol</label>
+            <input
+              type="text"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">
+              Low Stock Warning Level
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={lowStockThreshold}
+              onChange={(e) => setLowStockThreshold(parseInt(e.target.value, 10) || 5)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-stone-700 mb-1">
+              Receipt Footer Note
+            </label>
+            <input
+              type="text"
+              value={receiptFooter}
+              onChange={(e) => setReceiptFooter(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+            />
+          </div>
+        </div>
+      </form>
+
+      {/* Predefined Sizes Management */}
+      <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-stone-900">Predefined Sizes (70–190)</h2>
+          <span className="text-xs text-stone-500 font-mono-numbers">{sizes.length} active sizes</span>
+        </div>
+        <p className="text-xs text-stone-500">
+          Used across the product matrix and sales transaction auto-selection:
+        </p>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          {sizes.map((sz) => (
+            <div
+              key={sz.SizeID}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-100 border border-stone-300 rounded-lg text-xs font-mono-numbers font-semibold text-stone-800"
+            >
+              <span>{sz.SizeValue}</span>
+              <button
+                type="button"
+                onClick={() => deleteSize(sz.SizeID)}
+                className="text-stone-400 hover:text-red-600 transition-colors cursor-pointer"
+                title="Remove size"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <form onSubmit={handleAddSizeSubmit} className="flex gap-2 pt-2 max-w-sm">
+          <input
+            type="text"
+            placeholder="Add new size (e.g. 200, 210, M)"
+            value={newSizeValue}
+            onChange={(e) => setNewSizeValue(e.target.value)}
+            className="flex-1 px-3 py-1.5 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+          />
+          <button
+            type="submit"
+            className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer"
+          >
+            + Add Size
+          </button>
+        </form>
+      </div>
+
+      {/* Predefined 10 Colors Management */}
+      <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-stone-900">Predefined Colors (10 Standard Colors)</h2>
+          <span className="text-xs text-stone-500 font-mono-numbers">{colors.length} active colors</span>
+        </div>
+        <p className="text-xs text-stone-500">
+          Predefined standard color palette for dress variants and auto-loading:
+        </p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+          {colors.map((c) => (
+            <div
+              key={c.ColorID}
+              className="flex items-center justify-between p-2.5 bg-stone-50 border border-stone-200 rounded-lg text-xs"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-4 h-4 rounded-full border border-stone-300 shrink-0"
+                  style={{ backgroundColor: c.HexCode }}
+                />
+                <span className="font-semibold text-stone-800">{c.ColorName}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => deleteColor(c.ColorID)}
+                className="text-stone-400 hover:text-red-600 transition-colors cursor-pointer"
+                title="Remove color"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <form onSubmit={handleAddColorSubmit} className="flex gap-2 pt-2 max-w-md">
+          <input
+            type="color"
+            value={newColorHex}
+            onChange={(e) => setNewColorHex(e.target.value)}
+            className="w-10 h-8 p-0.5 border border-stone-300 rounded cursor-pointer"
+            title="Pick color code"
+          />
+          <input
+            type="text"
+            placeholder="Color name (e.g. Lavender, Mint)"
+            value={newColorName}
+            onChange={(e) => setNewColorName(e.target.value)}
+            className="flex-1 px-3 py-1.5 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+          />
+          <button
+            type="submit"
+            className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer"
+          >
+            + Add Color
+          </button>
+        </form>
+      </div>
+
+      {/* Predefined Price Categories */}
+      <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-xs space-y-3">
+        <h2 className="text-sm font-bold text-stone-900">Price Categories</h2>
+        <p className="text-xs text-stone-500">
+          Used to filter customer shop collections and executive inventory reports:
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+          {priceCategories.map((pc) => (
+            <div key={pc.ID} className="p-3 bg-stone-50 rounded-lg border border-stone-200 text-center font-medium">
+              <div className="font-bold text-stone-900">{pc.Name}</div>
+              <div className="text-[11px] text-stone-400 mt-0.5">
+                {pc.MaxPrice !== null ? `$${pc.MinPrice} – $${pc.MaxPrice}` : `≥ $${pc.MinPrice}`}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,148 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Girl dress product with embedded variants and images",
+      "type": "object",
+      "properties": {
+        "ProductID": { "type": "string", "maxLength": 128 },
+        "ProductCode": { "type": "string", "maxLength": 64 },
+        "ProductName": { "type": "string", "maxLength": 200 },
+        "DressTypeID": { "type": "string", "maxLength": 128 },
+        "Description": { "type": "string", "maxLength": 1000 },
+        "Brand": { "type": "string", "maxLength": 100 },
+        "Status": { "type": "string", "enum": ["active", "inactive"] },
+        "CreatedDate": { "type": "string" },
+        "ModifiedDate": { "type": "string" },
+        "Images": { "type": "array" },
+        "Variants": { "type": "array" }
+      },
+      "required": ["ProductID", "ProductCode", "ProductName"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Completed sales and orders",
+      "type": "object",
+      "properties": {
+        "OrderID": { "type": "string", "maxLength": 128 },
+        "OrderDate": { "type": "string", "maxLength": 64 },
+        "CustomerName": { "type": "string", "maxLength": 200 },
+        "CustomerPhone": { "type": "string", "maxLength": 50 },
+        "Subtotal": { "type": "number" },
+        "Discount": { "type": "number" },
+        "Total": { "type": "number" },
+        "Cost": { "type": "number" },
+        "Profit": { "type": "number" },
+        "PaymentMethod": { "type": "string", "maxLength": 50 },
+        "Status": { "type": "string", "enum": ["completed", "pending", "cancelled"] },
+        "Items": { "type": "array" }
+      },
+      "required": ["OrderID", "OrderDate", "Total", "CustomerName"]
+    },
+    "InventoryTransaction": {
+      "title": "InventoryTransaction",
+      "description": "Inventory movement records (IN/OUT)",
+      "type": "object",
+      "properties": {
+        "TransactionID": { "type": "string", "maxLength": 128 },
+        "TransactionDate": { "type": "string", "maxLength": 64 },
+        "TransactionType": { "type": "string", "maxLength": 64 },
+        "ProductCode": { "type": "string", "maxLength": 64 },
+        "ProductName": { "type": "string", "maxLength": 200 },
+        "Size": { "type": "string", "maxLength": 50 },
+        "Color": { "type": "string", "maxLength": 50 },
+        "Quantity": { "type": "number" },
+        "UnitCost": { "type": "number" },
+        "UnitPrice": { "type": "number" }
+      },
+      "required": ["TransactionID", "TransactionDate", "TransactionType", "ProductCode", "Quantity"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Boutique customer profiles",
+      "type": "object",
+      "properties": {
+        "CustomerID": { "type": "string", "maxLength": 128 },
+        "CustomerName": { "type": "string", "maxLength": 200 },
+        "Phone": { "type": "string", "maxLength": 50 },
+        "Address": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["CustomerID", "CustomerName"]
+    },
+    "DressType": {
+      "title": "DressType",
+      "description": "Dress category",
+      "type": "object",
+      "properties": {
+        "DressTypeID": { "type": "string", "maxLength": 128 },
+        "Name": { "type": "string", "maxLength": 100 },
+        "Description": { "type": "string", "maxLength": 300 },
+        "Status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["DressTypeID", "Name"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "Staff or admin user account with number and credentials",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "userNumber": { "type": "string", "maxLength": 50 },
+        "name": { "type": "string", "maxLength": 150 },
+        "role": { "type": "string", "enum": ["admin", "sales_staff", "staff"] },
+        "password": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["userId", "userNumber", "name", "role"]
+    },
+    "StoreConfig": {
+      "title": "StoreConfig",
+      "description": "Shop settings and configuration",
+      "type": "object",
+      "properties": {
+        "StoreName": { "type": "string", "maxLength": 150 },
+        "Tagline": { "type": "string", "maxLength": 200 },
+        "Phone": { "type": "string", "maxLength": 50 },
+        "Address": { "type": "string", "maxLength": 300 }
+      }
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "All girl dress products"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "All customer sale orders"
+    },
+    "/inventory_transactions/{transactionId}": {
+      "schema": "InventoryTransaction",
+      "description": "Inventory movement records"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer profiles"
+    },
+    "/dress_types/{dressTypeId}": {
+      "schema": "DressType",
+      "description": "Dress categories"
+    },
+    "/sizes/{sizeId}": {
+      "schema": "StoreConfig",
+      "description": "Available dress sizes"
+    },
+    "/colors/{colorId}": {
+      "schema": "StoreConfig",
+      "description": "Available dress colors"
+    },
+    "/settings/{settingId}": {
+      "schema": "StoreConfig",
+      "description": "Store configuration documents"
+    },
+    "/users/{userId}": {
+      "schema": "AppUser",
+      "description": "Staff and admin user accounts"
+    }
+  }
+}
