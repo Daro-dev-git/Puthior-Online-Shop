@@ -27,7 +27,8 @@ interface MenuItem {
   id: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  badge?: number;
+  badge?: number | string;
+  badgeColor?: 'default' | 'alert';
   highlight?: boolean;
   adminOnly?: boolean;
 }
@@ -39,13 +40,19 @@ interface MenuSection {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const { currentView, setCurrentView, kpis, role, isAdmin } = useStore();
+  const { currentView, setCurrentView, kpis, role, isAdmin, settings } = useStore();
 
   const menuSections: MenuSection[] = [
     {
       group: 'Store & Catalog',
       items: [
-        { id: 'dashboard', label: 'Home / Dashboard', icon: LayoutDashboard },
+        {
+          id: 'dashboard',
+          label: 'Home / Dashboard',
+          icon: LayoutDashboard,
+          badge: isAdmin && kpis.lowStockCount > 0 ? `${kpis.lowStockCount} alert` : undefined,
+          badgeColor: 'alert',
+        },
         { id: 'products', label: 'Products & Variants', icon: Shirt, badge: kpis.totalProducts },
         { id: 'inventory', label: 'Inventory Overview', icon: Boxes },
         { id: 'shop', label: 'Customer Online Shop', icon: Store },
@@ -110,14 +117,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         {/* Brand header */}
         <div className="p-5 border-b border-stone-200 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white flex items-center justify-center font-serif text-lg font-bold shadow-xs">
-              GD
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white flex items-center justify-center font-serif text-base font-bold shadow-xs">
+              {(settings?.StoreName || 'GD')
+                .split(' ')
+                .map((w) => w[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase()}
             </div>
-            <div>
-              <div className="text-base font-bold font-display tracking-tight text-stone-900 leading-tight">
-                Girl Dress Shop
+            <div className="min-w-0">
+              <div className="text-base font-bold font-display tracking-tight text-stone-900 leading-tight truncate max-w-[160px]">
+                {settings?.StoreName || 'Girl Dress Shop'}
               </div>
-              <div className="text-xs text-stone-500 font-medium">Boutique Inventory & POS</div>
+              <div className="text-xs text-stone-500 font-medium truncate max-w-[160px]">
+                {settings?.Tagline || 'Boutique Inventory & POS'}
+              </div>
             </div>
           </div>
           <button
@@ -158,7 +172,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         <span className="truncate">{item.label}</span>
                       </div>
                       {item.badge !== undefined && (
-                        <span className="text-[11px] font-mono-numbers text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded">
+                        <span
+                          className={`text-[11px] font-mono-numbers px-1.5 py-0.5 rounded font-semibold ${
+                            item.badgeColor === 'alert'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
+                              : 'text-stone-500 bg-stone-100'
+                          }`}
+                        >
                           {item.badge}
                         </span>
                       )}

@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
-import { Product } from '../../types';
 import {
   Search,
   Plus,
@@ -108,7 +107,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
             Girl Dress Products & Master Catalog
           </h1>
           <p className="text-xs text-stone-500 mt-0.5">
-            Manage multi-variant dresses, size matrices, image galleries, and pricing
+            Manage multi-variant dresses, size matrices, and pricing
           </p>
         </div>
 
@@ -116,7 +115,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
           {isAdmin && (
             <button
               onClick={onOpenAddProduct}
-              className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors"
+              className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>+ Add New Product</span>
@@ -125,7 +124,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
         </div>
       </div>
 
-      {/* Filter and Search Bar (Section 24 & 25) */}
+      {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           {/* Search Box */}
@@ -145,9 +144,9 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:ring-1 focus:ring-rose-500 focus:bg-white"
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:ring-1 focus:ring-rose-500 focus:bg-white cursor-pointer"
             >
-              <option value="all">All Dress Types ({dressTypes.length})</option>
+              <option value="all">All Dress Categories ({dressTypes.length})</option>
               {dressTypes.map((dt) => (
                 <option key={dt.DressTypeID} value={dt.DressTypeID}>
                   {dt.Name}
@@ -156,14 +155,14 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
             </select>
           </div>
 
-          {/* Price Range Category Filter (Section 24) */}
+          {/* Price Category Filter */}
           <div className="md:col-span-3">
             <select
               value={selectedPriceCat}
               onChange={(e) => setSelectedPriceCat(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:ring-1 focus:ring-rose-500 focus:bg-white"
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:ring-1 focus:ring-rose-500 focus:bg-white cursor-pointer"
             >
-              <option value="all">All Price Ranges</option>
+              <option value="all">All Price Categories</option>
               {priceCategories.map((pc) => (
                 <option key={pc.ID} value={pc.ID}>
                   {pc.Name}
@@ -172,24 +171,24 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
             </select>
           </div>
 
-          {/* View Toggle */}
+          {/* View Mode Switcher */}
           <div className="md:col-span-2 flex items-center justify-end gap-1">
-            <div className="flex items-center p-0.5 bg-stone-100 rounded-lg">
+            <div className="bg-stone-100 p-1 rounded-lg flex items-center gap-1 border border-stone-200">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded text-xs transition-colors ${
-                  viewMode === 'grid' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500'
+                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                  viewMode === 'grid' ? 'bg-white text-rose-700 shadow-2xs font-bold' : 'text-stone-400 hover:text-stone-700'
                 }`}
-                title="Grid cards view"
+                title="Grid Cards View"
               >
                 <Grid className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded text-xs transition-colors ${
-                  viewMode === 'table' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500'
+                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                  viewMode === 'table' ? 'bg-white text-rose-700 shadow-2xs font-bold' : 'text-stone-400 hover:text-stone-700'
                 }`}
-                title="Detailed table view"
+                title="Table Matrix View"
               >
                 <List className="w-4 h-4" />
               </button>
@@ -197,7 +196,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
           </div>
         </div>
 
-        {/* Status Pills as Interactive Segmented Controls */}
+        {/* Status Pills */}
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-stone-100 text-xs">
           <span className="text-stone-400 font-medium mr-1">Stock Filter:</span>
           {(['all', 'in_stock', 'low_stock', 'out_of_stock'] as const).map((filterVal) => {
@@ -212,7 +211,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
               <button
                 key={filterVal}
                 onClick={() => setSelectedStockFilter(filterVal)}
-                className={`px-3 py-1 rounded-md transition-colors ${
+                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
                   isActive
                     ? 'bg-rose-100 text-rose-900 font-semibold'
                     : 'text-stone-600 hover:bg-stone-100'
@@ -243,7 +242,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
           {isAdmin && (
             <button
               onClick={onOpenAddProduct}
-              className="px-5 py-2.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs inline-flex items-center gap-2 transition-colors"
+              className="px-5 py-2.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs inline-flex items-center gap-2 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>+ Attach Product from Computer</span>
@@ -264,7 +263,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
               setSelectedPriceCat('all');
               setSelectedStockFilter('all');
             }}
-            className="px-4 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors"
+            className="px-4 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer"
           >
             Clear All Filters
           </button>
@@ -300,52 +299,57 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                     <img
                       src={primaryImage}
                       alt={product.ProductName}
-                      referrerPolicy="no-referrer"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 bg-stone-50">
-                      <Shirt className="w-10 h-10" />
+                      <Shirt className="w-12 h-12 mb-2 stroke-1" />
+                      <span className="text-xs">No Photo Attached</span>
                     </div>
                   )}
 
-                  {/* Top Tags */}
-                  <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                    <span className="bg-stone-900/80 backdrop-blur-xs text-white font-mono text-[11px] font-bold px-2 py-0.5 rounded">
-                      {product.ProductCode}
-                    </span>
+                  {/* Stock Status Badge */}
+                  <div className="absolute top-3 right-3">
                     {isOutOfStock ? (
-                      <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                      <span className="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-rose-600 text-white rounded-full shadow-xs">
                         Out of Stock
                       </span>
                     ) : isLowStock ? (
-                      <span className="bg-amber-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                      <span className="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-amber-500 text-white rounded-full shadow-xs">
                         Low Stock
                       </span>
-                    ) : null}
+                    ) : (
+                      <span className="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-emerald-600 text-white rounded-full shadow-xs">
+                        In Stock ({totalStock})
+                      </span>
+                    )}
                   </div>
 
-                  <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="bg-white/95 text-stone-900 text-[11px] font-semibold px-2 py-1 rounded shadow-xs flex items-center gap-1">
-                      <Eye className="w-3.5 h-3.5" /> Details
-                    </span>
+                  {/* Product Code overlay */}
+                  <div className="absolute bottom-3 left-3 bg-stone-900/80 backdrop-blur-xs text-white px-2 py-0.5 rounded text-[11px] font-mono font-medium">
+                    {product.ProductCode}
                   </div>
                 </div>
 
                 {/* Details */}
                 <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                   <div>
-                    <div className="text-[11px] text-stone-400 uppercase tracking-wider font-semibold">
-                      {dressTypeName} · {product.Brand}
+                    <div className="flex items-center justify-between text-xs text-stone-500 mb-1">
+                      <span className="font-semibold text-rose-700 uppercase tracking-wider text-[10px]">
+                        {dressTypeName}
+                      </span>
+                      <span>{product.Brand}</span>
                     </div>
+
                     <h3
                       onClick={() => setSelectedProductId(product.ProductID)}
-                      className="text-sm font-bold text-stone-900 line-clamp-1 hover:text-rose-600 cursor-pointer mt-0.5"
+                      className="text-sm font-bold text-stone-900 line-clamp-1 hover:text-rose-600 transition-colors cursor-pointer"
+                      title={product.ProductName}
                     >
                       {product.ProductName}
                     </h3>
 
-                    {/* Price & Stock */}
+                    {/* Price & Variants Count */}
                     <div className="mt-2 flex items-baseline justify-between">
                       <span className="text-base font-bold font-mono-numbers text-rose-950">
                         {priceLabel}
@@ -369,13 +373,14 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                   </div>
 
                   {/* Actions */}
-                  <div className="pt-2 border-t border-stone-100 flex items-center justify-between gap-2">
+                  <div className="pt-2 border-t border-stone-100 flex items-center justify-between gap-1.5">
                     <button
                       onClick={() => setSelectedProductId(product.ProductID)}
                       className="flex-1 py-1.5 px-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-md text-xs font-semibold transition-colors text-center cursor-pointer"
                     >
-                      {isAdmin ? 'Manage & Adjust Variants' : 'View Variants'}
+                      {isAdmin ? 'Manage Variants' : 'View Variants'}
                     </button>
+
                     <button
                       onClick={() => onOpenRestock(product.ProductCode)}
                       title="Receive Stock (Inventory IN)"
@@ -383,11 +388,12 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                     >
                       <ArrowDownToLine className="w-4 h-4" />
                     </button>
+
                     {isAdmin && (
                       <button
                         onClick={() => handlePromptDelete(product.ProductID, product.ProductCode, product.ProductName)}
                         title="Delete Product"
-                        className="p-1.5 text-stone-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer"
+                        className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -464,7 +470,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => setSelectedProductId(p.ProductID)}
                             className="p-1.5 text-stone-500 hover:text-rose-600 hover:bg-stone-100 rounded cursor-pointer"
@@ -472,6 +478,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+
                           <button
                             onClick={() => onOpenRestock(p.ProductCode)}
                             className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
@@ -479,6 +486,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                           >
                             <ArrowDownToLine className="w-4 h-4" />
                           </button>
+
                           {isAdmin && (
                             <button
                               onClick={() => handlePromptDelete(p.ProductID, p.ProductCode, p.ProductName)}

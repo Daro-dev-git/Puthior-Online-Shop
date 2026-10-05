@@ -54,6 +54,7 @@ import {
   saveUserToFirestore,
   deleteUserFromFirestore,
 } from '../firebase/firestoreService';
+import { subscribeQuotaStatus, FIRESTORE_UPGRADE_URL } from '../firebase/config';
 
 interface ToastNotification {
   id: string;
@@ -131,7 +132,7 @@ interface StoreContextType {
   transactions: InventoryTransaction[];
   priceCategories: PriceCategory[];
   settings: StoreSettings;
-  updateSettings: (newSettings: Partial<StoreSettings>) => void;
+  updateSettings: (newSettings: Partial<StoreSettings>) => Promise<{ success: boolean; error?: string }>;
 
   // Cart for POS and Online Store
   cart: CartItem[];
@@ -193,6 +194,8 @@ interface StoreContextType {
     totalInventoryValue: number;
     lowStockCount: number;
     outOfStockCount: number;
+    lowStockProductsCount: number;
+    definedThreshold: number;
     todayRevenue: number;
     todayProfit: number;
     todayCost: number;
@@ -203,6 +206,21 @@ interface StoreContextType {
   };
 
   isFirebaseConnected: boolean;
+  isQuotaExceeded: boolean;
+  quotaUpgradeUrl: string;
+  updateLowStockThreshold: (threshold: number) => Promise<void>;
+  lowStockItemsList: Array<{
+    productId: string;
+    productName: string;
+    productCode: string;
+    variantId: string;
+    size: string;
+    color: string;
+    currentStock: number;
+    threshold: number;
+    sellingPrice: number;
+    image?: string;
+  }>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -215,6 +233,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [activeReceiptOrder, setActiveReceiptOrder] = useState<Order | null>(null);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState<boolean>(false);
 
   // Firestore Collections State
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -225,7 +244,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
   const [transactions, setTransactions] = useState<InventoryTransaction[]>(INITIAL_TRANSACTIONS);
   const [priceCategories] = useState<PriceCategory[]>(INITIAL_PRICE_CATEGORIES);
-  const [settings, setSettings] = useState<StoreSettings>(INITIAL_SETTINGS);
+  const [settings, setSettings] = useState<StoreSettings>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_store_settings');
+      return cached ? { ...INITIAL_SETTINGS, ...JSON.parse(cached) } : INITIAL_SETTINGS;
+    } catch {
+      return INITIAL_SETTINGS;
+    }
+  });
   const [users, setUsers] = useState<AppUser[]>(INITIAL_USERS);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(true);
 
@@ -267,6 +293,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     // Subscribe to live Firestore changes across all clients/sessions
     const unsubs: Array<() => void> = [];
+
+    // Listen to Firebase Quota status
+    unsubs.push(
+      subscribeQuotaStatus((status) => {
+        setIsQuotaExceeded(status.isExceeded);
+      })
+    );
 
     unsubs.push(
       subscribeProducts((list) => {
@@ -312,7 +345,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     unsubs.push(
       subscribeSettings((data) => {
-        if (data) setSettings(data);
+        if (data) {
+          const merged: StoreSettings = { ...INITIAL_SETTINGS, ...data };
+          setSettings(merged);
+          try {
+            localStorage.setItem('gds_cached_store_settings', JSON.stringify(merged));
+          } catch {
+            // ignore
+          }
+        }
       })
     );
 
@@ -1330,34 +1371,75 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     showToast(`Customer "${customer.CustomerName}" updated.`);
   };
 
-  const updateSettings = (newSettings: Partial<StoreSettings>) => {
-    const updated = { ...settings, ...newSettings };
+  const updateSettings = async (
+    newSettings: Partial<StoreSettings>
+  ): Promise<{ success: boolean; error?: string }> => {
+    const updated: StoreSettings = {
+      ...settings,
+      ...newSettings,
+      StoreName: newSettings.StoreName !== undefined ? newSettings.StoreName.trim() : settings.StoreName,
+      Tagline: newSettings.Tagline !== undefined ? newSettings.Tagline.trim() : settings.Tagline,
+      Phone: newSettings.Phone !== undefined ? newSettings.Phone.trim() : settings.Phone,
+      Email: newSettings.Email !== undefined ? newSettings.Email.trim() : settings.Email,
+      Address: newSettings.Address !== undefined ? newSettings.Address.trim() : settings.Address,
+      Currency: newSettings.Currency || settings.Currency || '$',
+      LowStockThreshold: newSettings.LowStockThreshold || settings.LowStockThreshold || 5,
+      ReceiptFooterMessage:
+        newSettings.ReceiptFooterMessage !== undefined
+          ? newSettings.ReceiptFooterMessage.trim()
+          : settings.ReceiptFooterMessage,
+    };
+
     setSettings(updated);
-    saveSettingsToFirestore(updated).catch(console.error);
-    showToast('Store settings updated.');
+    try {
+      localStorage.setItem('gds_cached_store_settings', JSON.stringify(updated));
+      await saveSettingsToFirestore(updated);
+      showToast('Store Profile & Receipt Details saved permanently to database!');
+      return { success: true };
+    } catch (err) {
+      console.error('Failed to save store settings to database:', err);
+      showToast('Failed to save store settings to database', 'error');
+      return { success: false, error: 'Database save failed' };
+    }
+  };
+
+  // Quick updater for admin to define/change low stock threshold
+  const updateLowStockThreshold = async (newThreshold: number) => {
+    const safeThreshold = Math.max(1, Math.min(100, Math.floor(newThreshold)));
+    await updateSettings({ LowStockThreshold: safeThreshold });
   };
 
   // Aggregated KPIs calculation
   const kpis = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
+    const threshold = settings.LowStockThreshold || 5;
 
     let totalVariants = 0;
     let totalStockUnits = 0;
     let totalInventoryValue = 0;
     let lowStockCount = 0;
     let outOfStockCount = 0;
+    const lowStockProductIds = new Set<string>();
 
     products.forEach((p) => {
+      let productHasLowStock = false;
       p.Variants.forEach((v) => {
         totalVariants += 1;
         totalStockUnits += v.CurrentStock;
         totalInventoryValue += v.CurrentStock * v.ActualPrice;
+        const itemThreshold = v.MinimumStock || threshold;
         if (v.CurrentStock === 0) {
           outOfStockCount += 1;
-        } else if (v.CurrentStock <= v.MinimumStock) {
           lowStockCount += 1;
+          productHasLowStock = true;
+        } else if (v.CurrentStock <= itemThreshold) {
+          lowStockCount += 1;
+          productHasLowStock = true;
         }
       });
+      if (productHasLowStock) {
+        lowStockProductIds.add(p.ProductID);
+      }
     });
 
     const todayOrdersList = orders.filter((o) => o.OrderDate.startsWith(today));
@@ -1385,6 +1467,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       totalInventoryValue,
       lowStockCount,
       outOfStockCount,
+      lowStockProductsCount: lowStockProductIds.size,
+      definedThreshold: threshold,
       todayRevenue,
       todayProfit,
       todayCost,
@@ -1393,7 +1477,46 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       todayStockIn,
       todayStockOut,
     };
-  }, [products, orders, transactions]);
+  }, [products, orders, transactions, settings.LowStockThreshold]);
+
+  // Real-time Low Stock Items List for Notifications & Badges
+  const lowStockItemsList = useMemo(() => {
+    const threshold = settings.LowStockThreshold || 5;
+    const list: Array<{
+      productId: string;
+      productName: string;
+      productCode: string;
+      variantId: string;
+      size: string;
+      color: string;
+      currentStock: number;
+      threshold: number;
+      sellingPrice: number;
+      image?: string;
+    }> = [];
+
+    products.forEach((p) => {
+      p.Variants.forEach((v) => {
+        const itemThreshold = v.MinimumStock || threshold;
+        if (v.CurrentStock <= itemThreshold) {
+          list.push({
+            productId: p.ProductID,
+            productName: p.ProductName,
+            productCode: p.ProductCode,
+            variantId: v.VariantID,
+            size: v.Size,
+            color: v.Color,
+            currentStock: v.CurrentStock,
+            threshold: itemThreshold,
+            sellingPrice: v.SellingPrice,
+            image: p.Images?.[0]?.ImageURL,
+          });
+        }
+      });
+    });
+
+    return list.sort((a, b) => a.currentStock - b.currentStock);
+  }, [products, settings.LowStockThreshold]);
 
   return (
     <StoreContext.Provider
@@ -1475,6 +1598,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         kpis,
         isFirebaseConnected,
+        isQuotaExceeded,
+        quotaUpgradeUrl: FIRESTORE_UPGRADE_URL,
+        updateLowStockThreshold,
+        lowStockItemsList,
       }}
     >
       {children}

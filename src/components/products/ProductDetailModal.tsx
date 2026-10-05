@@ -166,7 +166,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg">
+          <button onClick={onClose} className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -187,54 +187,40 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-stone-400">
-                    <Shirt className="w-12 h-12 stroke-[1.2]" />
-                    <span className="text-xs mt-2">No image uploaded</span>
+                  <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 bg-stone-50">
+                    <Shirt className="w-12 h-12 mb-2 stroke-1" />
+                    <span className="text-xs">No Photo Attached</span>
                   </div>
                 )}
+
                 {currentDisplayImage?.IsPrimary && (
-                  <span className="absolute top-2 left-2 bg-stone-900/80 text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                    Primary Image
+                  <span className="absolute top-2 left-2 px-2 py-0.5 text-[10px] font-bold bg-rose-600 text-white rounded shadow-xs">
+                    Primary Cover
                   </span>
                 )}
               </div>
 
-              {/* Thumbnails row */}
+              {/* Thumbnails list */}
               <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {product.Images.map((img, idx) => (
-                  <div key={img.ImageID} className="relative group shrink-0">
-                    <button
-                      onClick={() => setActiveImageIndex(idx)}
-                      className={`w-14 h-14 rounded-md overflow-hidden border-2 transition-all ${
-                        activeImageIndex === idx ? 'border-rose-600 ring-2 ring-rose-200' : 'border-stone-200'
-                      }`}
-                    >
-                      <img src={img.ImageURL} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
-                    </button>
-                    {isAdmin && (
-                      <div className="absolute -top-1 -right-1 hidden group-hover:flex items-center gap-0.5 bg-stone-900/90 text-white rounded p-0.5">
-                        {!img.IsPrimary && (
-                          <button
-                            title="Set as Primary"
-                            onClick={() => handleSetPrimary(idx)}
-                            className="p-1 hover:text-emerald-400"
-                          >
-                            <CheckCircle2 className="w-3 h-3" />
-                          </button>
-                        )}
-                        <button
-                          title="Delete image"
-                          onClick={() => handleDeleteImage(idx)}
-                          className="p-1 hover:text-rose-400"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                {productImages.map((img, idx) => (
+                  <button
+                    key={img.ImageID}
+                    onClick={() => setActiveImageIndex(idx)}
+                    className={`w-14 h-14 rounded-md overflow-hidden border-2 shrink-0 transition-all cursor-pointer relative ${
+                      activeImageIndex === idx ? 'border-rose-600 ring-2 ring-rose-200' : 'border-stone-200 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    {img.ImageURL ? (
+                      <img src={img.ImageURL} alt={img.Caption || 'thumbnail'} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-stone-100 text-stone-400">
+                        <Shirt className="w-5 h-5" />
                       </div>
                     )}
-                  </div>
+                  </button>
                 ))}
 
-                {/* Hidden input for local computer file upload */}
+                {/* Upload from Computer Trigger */}
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -244,65 +230,91 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
                   className="hidden"
                 />
 
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isAttachingLocal}
-                    className="w-14 h-14 rounded-md border border-dashed border-rose-300 bg-rose-50/60 hover:bg-rose-100/80 hover:border-rose-500 flex flex-col items-center justify-center text-rose-700 transition-colors shrink-0 text-[10px] font-medium"
-                    title="Attach Photos from Local Computer"
-                  >
-                    {isAttachingLocal ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
-                    ) : (
-                      <Upload className="w-4 h-4 text-rose-600" />
-                    )}
-                    <span className="leading-tight text-[9px] mt-0.5">Computer</span>
-                  </button>
-                )}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isAttachingLocal}
+                  title="Attach Photo from Computer"
+                  className="w-14 h-14 rounded-md border-2 border-dashed border-rose-300 hover:border-rose-500 bg-rose-50/50 hover:bg-rose-50 text-rose-700 flex flex-col items-center justify-center shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isAttachingLocal ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mb-0.5" />
+                      <span className="text-[9px] font-bold">Local</span>
+                    </>
+                  )}
+                </button>
 
-                {isAdmin && (
-                  <button
-                    onClick={() => setShowAddImage(!showAddImage)}
-                    className="w-14 h-14 rounded-md border border-dashed border-stone-300 hover:border-stone-500 hover:bg-stone-100 flex flex-col items-center justify-center text-stone-500 hover:text-stone-800 transition-colors shrink-0 text-[10px]"
-                    title="Attach by URL"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span className="text-[9px]">URL</span>
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowAddImage(true)}
+                  title="Add Image via Web URL"
+                  className="w-14 h-14 rounded-md border-2 border-dashed border-stone-300 hover:border-stone-400 bg-stone-50 hover:bg-stone-100 flex flex-col items-center justify-center text-stone-500 shrink-0 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="text-[9px]">URL</span>
+                </button>
               </div>
 
-              {/* Add Image Inline Form */}
+              {/* Gallery Image Actions */}
+              {product.Images.length > 0 && (
+                <div className="flex items-center justify-between text-xs pt-1">
+                  {!currentDisplayImage.IsPrimary ? (
+                    <button
+                      onClick={() => handleSetPrimary(activeImageIndex)}
+                      className="text-rose-600 hover:text-rose-800 font-medium flex items-center gap-1 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Make Primary Cover
+                    </button>
+                  ) : (
+                    <span className="text-emerald-600 font-medium text-[11px] flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Current Primary Cover
+                    </span>
+                  )}
+
+                  {product.Images.length > 1 && (
+                    <button
+                      onClick={() => handleDeleteImage(activeImageIndex)}
+                      className="text-rose-500 hover:text-rose-700 flex items-center gap-1 cursor-pointer ml-auto"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete Image
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Add image form */}
               {showAddImage && (
-                <form onSubmit={handleAddImage} className="p-3 bg-stone-50 border border-stone-200 rounded-lg text-xs space-y-2">
-                  <div className="font-semibold text-stone-800">Attach New Product Image</div>
+                <form onSubmit={handleAddImage} className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-2 text-xs">
+                  <div className="font-semibold text-stone-700">Add Image URL</div>
                   <input
                     type="url"
-                    placeholder="Image URL (or paste data URI)"
+                    placeholder="https://example.com/dress.jpg"
                     value={newImageUrl}
                     onChange={(e) => setNewImageUrl(e.target.value)}
                     required
-                    className="w-full px-2.5 py-1.5 bg-white border border-stone-300 rounded text-xs focus:ring-1 focus:ring-rose-500"
+                    className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded text-xs focus:ring-1 focus:ring-rose-500"
                   />
                   <input
                     type="text"
-                    placeholder="Caption (e.g. Back view, Close-up embroidery)"
+                    placeholder="Caption (e.g. Back view, Detail embroidery)"
                     value={newImageCaption}
                     onChange={(e) => setNewImageCaption(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-stone-300 rounded text-xs focus:ring-1 focus:ring-rose-500"
+                    className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded text-xs focus:ring-1 focus:ring-rose-500"
                   />
                   <div className="flex justify-end gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setShowAddImage(false)}
-                      className="px-2 py-1 text-stone-600 hover:bg-stone-200 rounded"
+                      className="px-2.5 py-1 text-stone-500 hover:text-stone-700 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded font-medium"
+                      className="px-3 py-1 bg-rose-600 text-white rounded font-medium hover:bg-rose-700 cursor-pointer"
                     >
                       Save Image
                     </button>
@@ -311,157 +323,133 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
               )}
             </div>
 
-            {/* Product Metadata Details */}
+            {/* Overview Details Column */}
             <div className="md:col-span-7 space-y-4">
               <div>
-                <h3 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-1">
-                  Description
-                </h3>
-                <p className="text-sm text-stone-700 leading-relaxed bg-stone-50 p-3 rounded-lg border border-stone-200">
-                  {product.Description || 'No detailed description provided.'}
+                <h4 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-1">
+                  Product Description
+                </h4>
+                <p className="text-xs text-stone-700 leading-relaxed bg-stone-50 p-3 rounded-lg border border-stone-200">
+                  {product.Description || 'No detailed description specified.'}
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="bg-stone-50 p-2.5 rounded border border-stone-200">
-                  <span className="text-stone-400 block text-[11px]">Category</span>
+              {/* Master specs */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 bg-stone-50 rounded-lg border border-stone-200">
+                  <span className="text-stone-400 block text-[11px]">Dress Category</span>
                   <span className="font-semibold text-stone-800">{dressTypeName}</span>
                 </div>
-                <div className="bg-stone-50 p-2.5 rounded border border-stone-200">
-                  <span className="text-stone-400 block text-[11px]">Brand Label</span>
+                <div className="p-3 bg-stone-50 rounded-lg border border-stone-200">
+                  <span className="text-stone-400 block text-[11px]">Brand Name</span>
                   <span className="font-semibold text-stone-800">{product.Brand}</span>
                 </div>
-                <div className="bg-stone-50 p-2.5 rounded border border-stone-200">
-                  <span className="text-stone-400 block text-[11px]">Created Date</span>
-                  <span className="font-mono text-stone-800">{product.CreatedDate}</span>
-                </div>
-                <div className="bg-stone-50 p-2.5 rounded border border-stone-200">
-                  <span className="text-stone-400 block text-[11px]">Status</span>
-                  <span className="font-semibold text-emerald-700 capitalize">{product.Status}</span>
+                <div className="p-3 bg-stone-50 rounded-lg border border-stone-200">
+                  <span className="text-stone-400 block text-[11px]">Available Variants</span>
+                  <span className="font-semibold text-stone-800 font-mono-numbers">
+                    {product.Variants.length} distinct items
+                  </span>
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => onOpenRestock(product.ProductCode)}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg flex items-center gap-1.5 shadow-xs"
-                >
-                  <ArrowDownToLine className="w-3.5 h-3.5" />
-                  <span>Receive Stock (Inventory IN)</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation Tabs: Variants vs Inventory History */}
-          <div className="border-b border-stone-200 flex items-center gap-4 text-xs font-medium">
-            <button
-              onClick={() => setActiveTab('variants')}
-              className={`pb-2 transition-colors relative ${
-                activeTab === 'variants'
-                  ? 'text-rose-700 font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-rose-600'
-                  : 'text-stone-500 hover:text-stone-900'
-              }`}
-            >
-              Variant Matrix ({product.Variants.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`pb-2 transition-colors relative flex items-center gap-1.5 ${
-                activeTab === 'history'
-                  ? 'text-rose-700 font-bold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-rose-600'
-                  : 'text-stone-500 hover:text-stone-900'
-              }`}
-            >
-              <History className="w-3.5 h-3.5" />
-              <span>Stock Movement Audit ({productTransactions.length})</span>
-            </button>
-          </div>
-
-          {/* Section 6 & 9: Variant Matrix Table */}
-          {activeTab === 'variants' && (
-            <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-stone-500">
-                <span>Unique inventory keys: Product Code + Size + Color</span>
+              {/* Quick Actions */}
+              <div className="p-3 bg-rose-50/60 rounded-lg border border-rose-100 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-rose-900">
+                  <span className="font-bold font-mono-numbers">{totalStock}</span> total items across all sizes and colors
+                </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onOpenRestock(product.ProductCode)}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowDownToLine className="w-3.5 h-3.5" />
+                    <span>Receive Stock (Stock IN)</span>
+                  </button>
                   {isAdmin && (
                     <button
-                      type="button"
                       onClick={() => setShowAddVariant(true)}
-                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                      className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-100 border border-rose-200 rounded-md shadow-xs flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>+ Add New Variant</span>
+                      <span>+ Add Variant</span>
                     </button>
                   )}
                 </div>
               </div>
+            </div>
+          </div>
 
-              <div className="overflow-x-auto border border-stone-200 rounded-lg">
+          {/* Navigation Tabs */}
+          <div className="border-b border-stone-200 flex items-center gap-4 text-xs font-semibold">
+            <button
+              onClick={() => setActiveTab('variants')}
+              className={`pb-2 transition-colors cursor-pointer border-b-2 flex items-center gap-1.5 ${
+                activeTab === 'variants'
+                  ? 'border-rose-600 text-rose-600'
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span>Variant Matrix & Stock Levels ({product.Variants.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`pb-2 transition-colors cursor-pointer border-b-2 flex items-center gap-1.5 ${
+                activeTab === 'history'
+                  ? 'border-rose-600 text-rose-600'
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>Inventory History Log ({productTransactions.length})</span>
+            </button>
+          </div>
+
+          {/* Tab 1: Variant Matrix Table */}
+          {activeTab === 'variants' && (
+            <div className="space-y-3">
+              <div className="border border-stone-200 rounded-lg overflow-hidden">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold">
+                  <thead className="bg-stone-50 text-stone-600 border-b border-stone-200 font-semibold">
                     <tr>
                       <th className="py-2.5 px-3">Size</th>
                       <th className="py-2.5 px-3">Color</th>
-                      <th className="py-2.5 px-3 text-center">Status</th>
-                      {isAdmin && <th className="py-2.5 px-3 text-right">Actual Price</th>}
+                      <th className="py-2.5 px-3 text-right">Cost (Actual)</th>
                       <th className="py-2.5 px-3 text-right">Selling Price</th>
-                      {isAdmin && <th className="py-2.5 px-3 text-right">Profit</th>}
-                      {isAdmin && <th className="py-2.5 px-3 text-right">Margin %</th>}
-                      <th className="py-2.5 px-3 text-center">Stock</th>
                       <th className="py-2.5 px-3 text-center">Min Stock</th>
+                      <th className="py-2.5 px-3 text-center">On Hand</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
                       <th className="py-2.5 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
                     {product.Variants.map((v) => {
-                      const profit = v.SellingPrice - v.ActualPrice;
-                      const marginPct = v.ActualPrice > 0 ? (profit / v.ActualPrice) * 100 : 0;
-                      const isLow = v.CurrentStock <= v.MinimumStock;
+                      const isLow = v.CurrentStock <= v.MinimumStock && v.CurrentStock > 0;
                       const isOut = v.CurrentStock === 0;
 
                       return (
-                        <tr key={v.VariantID} className="hover:bg-stone-50/70 transition-colors">
-                          <td className="py-2.5 px-3 font-semibold text-stone-900 font-mono-numbers">
-                            {v.Size}
-                          </td>
+                        <tr key={v.VariantID} className="hover:bg-stone-50/70">
+                          <td className="py-2.5 px-3 font-mono font-bold text-stone-900">{v.Size}</td>
                           <td className="py-2.5 px-3">
-                            <span className="font-medium text-stone-800">{v.Color}</span>
-                          </td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                                v.Status === 'active'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-stone-200 text-stone-600'
-                              }`}
-                            >
-                              {v.Status}
+                            <span className="inline-flex items-center gap-1.5 font-medium text-stone-800">
+                              <span className="w-2.5 h-2.5 rounded-full border border-stone-300" style={{ backgroundColor: v.Color.toLowerCase() }} />
+                              {v.Color}
                             </span>
                           </td>
-                          {isAdmin && (
-                            <td className="py-2.5 px-3 text-right font-mono-numbers font-medium text-stone-600">
-                              ${v.ActualPrice.toFixed(2)}
-                            </td>
-                          )}
-                          <td className="py-2.5 px-3 text-right font-mono-numbers font-semibold text-stone-900">
+                          <td className="py-2.5 px-3 text-right font-mono-numbers text-stone-600">
+                            ${v.ActualPrice.toFixed(2)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono-numbers font-bold text-stone-900">
                             ${v.SellingPrice.toFixed(2)}
                           </td>
-                          {isAdmin && (
-                            <td className="py-2.5 px-3 text-right font-mono-numbers font-medium text-emerald-700">
-                              +${profit.toFixed(2)}
-                            </td>
-                          )}
-                          {isAdmin && (
-                            <td className="py-2.5 px-3 text-right font-mono-numbers text-stone-600">
-                              {marginPct.toFixed(1)}%
-                            </td>
-                          )}
+                          <td className="py-2.5 px-3 text-center font-mono-numbers text-stone-500">
+                            {v.MinimumStock}
+                          </td>
                           <td className="py-2.5 px-3 text-center">
                             <span
-                              className={`px-2 py-0.5 rounded font-mono-numbers font-bold text-xs ${
+                              className={`font-mono-numbers font-bold px-2 py-0.5 rounded text-[11px] ${
                                 isOut
-                                  ? 'bg-rose-100 text-rose-800'
+                                  ? 'bg-rose-100 text-rose-800 font-bold'
                                   : isLow
                                   ? 'bg-amber-100 text-amber-800'
                                   : 'bg-emerald-50 text-emerald-800'
@@ -470,30 +458,33 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
                               {v.CurrentStock}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 text-center font-mono-numbers text-stone-500">
-                            {v.MinimumStock}
+                          <td className="py-2.5 px-3 text-center">
+                            {isOut ? (
+                              <span className="text-[10px] font-bold text-rose-600 uppercase">Out of stock</span>
+                            ) : isLow ? (
+                              <span className="text-[10px] font-bold text-amber-600 uppercase">Low alert</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-emerald-600 uppercase">Available</span>
+                            )}
                           </td>
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => onOpenRestock(product.ProductCode, v.Size, v.Color)}
+                                title="Add stock for this size/color"
+                                className="p-1 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
+                              >
+                                <ArrowDownToLine className="w-3.5 h-3.5" />
+                              </button>
                               {isAdmin && (
                                 <button
-                                  type="button"
                                   onClick={() => setEditingVariant(v)}
-                                  className="px-2 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Edit variant details & stock adjustment"
+                                  title="Edit variant prices & adjust stock count"
+                                  className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
                                 >
-                                  <SlidersHorizontal className="w-3 h-3" />
-                                  <span>Edit / Adjust</span>
+                                  <Edit2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => onOpenRestock(product.ProductCode, v.Size, v.Color)}
-                                className="text-[11px] font-medium text-stone-700 hover:text-stone-900 px-2 py-1 rounded bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer"
-                                title="Quick stock receive"
-                              >
-                                + IN
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -505,68 +496,62 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
             </div>
           )}
 
-          {/* Section 32: Complete Product Stock Movement Audit Trail */}
+          {/* Tab 2: Inventory History Log */}
           {activeTab === 'history' && (
             <div className="space-y-3">
-              <div className="text-xs text-stone-500">
-                Audit log for Product Code <strong>{product.ProductCode}</strong>. Every IN & OUT movement is preserved.
-              </div>
-
               {productTransactions.length === 0 ? (
                 <div className="p-8 text-center bg-stone-50 rounded-lg text-xs text-stone-500">
                   No stock transactions recorded for this product yet.
                 </div>
               ) : (
-                <div className="overflow-x-auto border border-stone-200 rounded-lg">
+                <div className="border border-stone-200 rounded-lg overflow-hidden">
                   <table className="w-full text-xs text-left">
-                    <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold">
+                    <thead className="bg-stone-50 text-stone-600 border-b border-stone-200 font-semibold">
                       <tr>
                         <th className="py-2.5 px-3">Date</th>
                         <th className="py-2.5 px-3">Type</th>
                         <th className="py-2.5 px-3">Size / Color</th>
-                        <th className="py-2.5 px-3 text-center">Qty</th>
-                        <th className="py-2.5 px-3">Ref / Notes</th>
-                        <th className="py-2.5 px-3">User</th>
+                        <th className="py-2.5 px-3 text-right">Quantity</th>
+                        <th className="py-2.5 px-3 text-right">Selling Price</th>
+                        <th className="py-2.5 px-3">Notes</th>
+                        <th className="py-2.5 px-3">Operator</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100">
                       {productTransactions.map((tx) => {
-                        const isIN = ['Purchase', 'Stock Received', 'Customer Return', 'Adjustment IN'].includes(
-                          tx.TransactionType
-                        );
+                        const isStockIn =
+                          tx.TransactionType === 'Stock Received' ||
+                          tx.TransactionType === 'Purchase' ||
+                          tx.TransactionType === 'Customer Return' ||
+                          tx.TransactionType === 'Adjustment IN';
+
                         return (
                           <tr key={tx.TransactionID} className="hover:bg-stone-50/70">
-                            <td className="py-2 px-3 font-mono text-stone-500 text-[11px]">
-                              {new Date(tx.TransactionDate).toLocaleString('en-US', {
-                                dateStyle: 'short',
-                                timeStyle: 'short',
-                              })}
+                            <td className="py-2.5 px-3 font-mono text-stone-500">
+                              {new Date(tx.TransactionDate).toLocaleString()}
                             </td>
-                            <td className="py-2 px-3">
+                            <td className="py-2.5 px-3">
                               <span
-                                className={`inline-flex items-center gap-1 font-semibold text-[11px] ${
-                                  isIN ? 'text-emerald-700' : 'text-rose-700'
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                  isStockIn
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-rose-100 text-rose-800'
                                 }`}
                               >
-                                {isIN ? <ArrowDownToLine className="w-3 h-3" /> : <ArrowUpFromLine className="w-3 h-3" />}
                                 {tx.TransactionType}
                               </span>
                             </td>
-                            <td className="py-2 px-3">
-                              <span className="font-semibold">{tx.Size}</span> · {tx.Color}
+                            <td className="py-2.5 px-3 font-medium text-stone-800">
+                              Size {tx.Size} · {tx.Color}
                             </td>
-                            <td
-                              className={`py-2 px-3 text-center font-mono-numbers font-bold ${
-                                isIN ? 'text-emerald-700' : 'text-rose-700'
-                              }`}
-                            >
-                              {isIN ? `+${tx.Quantity}` : `-${tx.Quantity}`}
+                            <td className="py-2.5 px-3 text-right font-mono-numbers font-bold">
+                              {isStockIn ? `+${tx.Quantity}` : `-${tx.Quantity}`}
                             </td>
-                            <td className="py-2 px-3 text-stone-600 max-w-xs truncate">
-                              {tx.Supplier || tx.CustomerName ? `${tx.Supplier || tx.CustomerName} · ` : ''}
-                              {tx.Notes}
+                            <td className="py-2.5 px-3 text-right font-mono-numbers text-stone-600">
+                              ${tx.SellingPrice.toFixed(2)}
                             </td>
-                            <td className="py-2 px-3 text-stone-500 text-[11px]">{tx.CreatedBy}</td>
+                            <td className="py-2.5 px-3 text-stone-600">{tx.Notes || '-'}</td>
+                            <td className="py-2.5 px-3 text-stone-500">{tx.CreatedBy}</td>
                           </tr>
                         );
                       })}

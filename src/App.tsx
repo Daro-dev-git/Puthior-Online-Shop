@@ -5,6 +5,8 @@ import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
 import { ToastContainer } from './components/common/ToastContainer';
 import { ReceiptModal } from './components/common/ReceiptModal';
+import { QuotaExceededBanner } from './components/common/QuotaExceededBanner';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { ShieldAlert } from 'lucide-react';
 
 import { DashboardView } from './components/dashboard/DashboardView';
@@ -82,6 +84,9 @@ const MainAppLayout: React.FC = () => {
     <div className="min-h-screen bg-stone-50 flex flex-col text-stone-900 font-sans">
       {/* Top Navigation */}
       <Navbar onToggleSidebar={() => setSidebarOpen((prev) => !prev)} />
+
+      {/* Firestore Quota Exceeded Notification Banner */}
+      <QuotaExceededBanner />
 
       {/* App Body with Sidebar */}
       <div className="flex-1 flex max-w-7xl w-full mx-auto">
@@ -177,8 +182,10 @@ const MainAppLayout: React.FC = () => {
 
 export default function App() {
   return (
-    <StoreProvider>
-      <MainAppLayout />
-    </StoreProvider>
+    <ErrorBoundary>
+      <StoreProvider>
+        <MainAppLayout />
+      </StoreProvider>
+    </ErrorBoundary>
   );
 }

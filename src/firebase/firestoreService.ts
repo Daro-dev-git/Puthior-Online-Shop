@@ -121,7 +121,11 @@ export function subscribeProducts(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, COLLECTIONS.PRODUCTS);
+      try {
+        handleFirestoreError(error, OperationType.GET, COLLECTIONS.PRODUCTS);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }
@@ -143,7 +147,11 @@ export function subscribeOrders(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, COLLECTIONS.ORDERS);
+      try {
+        handleFirestoreError(error, OperationType.GET, COLLECTIONS.ORDERS);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }
@@ -164,7 +172,11 @@ export function subscribeTransactions(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, COLLECTIONS.TRANSACTIONS);
+      try {
+        handleFirestoreError(error, OperationType.GET, COLLECTIONS.TRANSACTIONS);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }
@@ -184,7 +196,11 @@ export function subscribeCustomers(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, COLLECTIONS.CUSTOMERS);
+      try {
+        handleFirestoreError(error, OperationType.GET, COLLECTIONS.CUSTOMERS);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }
@@ -204,7 +220,11 @@ export function subscribeDressTypes(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, COLLECTIONS.DRESS_TYPES);
+      try {
+        handleFirestoreError(error, OperationType.GET, COLLECTIONS.DRESS_TYPES);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }
@@ -230,7 +250,11 @@ export function subscribeSizes(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, COLLECTIONS.SIZES);
+      try {
+        handleFirestoreError(error, OperationType.GET, COLLECTIONS.SIZES);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }
@@ -250,7 +274,11 @@ export function subscribeColors(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, COLLECTIONS.COLORS);
+      try {
+        handleFirestoreError(error, OperationType.GET, COLLECTIONS.COLORS);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }
@@ -268,7 +296,11 @@ export function subscribeSettings(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, `${COLLECTIONS.SETTINGS}/store`);
+      try {
+        handleFirestoreError(error, OperationType.GET, `${COLLECTIONS.SETTINGS}/store`);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }
@@ -290,7 +322,11 @@ export function subscribeUsers(
     },
     (error) => {
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.GET, COLLECTIONS.USERS);
+      try {
+        handleFirestoreError(error, OperationType.GET, COLLECTIONS.USERS);
+      } catch (e) {
+        console.warn('Subscription error handled:', e);
+      }
     }
   );
 }

@@ -54,16 +54,21 @@ service cloud.firestore {
 
     function isValidSize(data) {
       return data.SizeID is string && data.SizeID.size() <= 128
-        && data.Name is string && data.Name.size() > 0 && data.Name.size() <= 50;
+        && data.Name is string || data.SizeValue is string;
     }
 
     function isValidColor(data) {
       return data.ColorID is string && data.ColorID.size() <= 128
-        && data.Name is string && data.Name.size() > 0 && data.Name.size() <= 50;
+        && (data.Name is string || data.ColorName is string);
     }
 
     function isValidSettings(data) {
-      return !('StoreName' in data) || (data.StoreName is string && data.StoreName.size() <= 150);
+      return (!('StoreName' in data) || (data.StoreName is string && data.StoreName.size() <= 200))
+        && (!('Tagline' in data) || (data.Tagline is string && data.Tagline.size() <= 300))
+        && (!('Phone' in data) || (data.Phone is string && data.Phone.size() <= 100))
+        && (!('Email' in data) || (data.Email is string && data.Email.size() <= 150))
+        && (!('Address' in data) || (data.Address is string && data.Address.size() <= 500))
+        && (!('ReceiptFooterMessage' in data) || (data.ReceiptFooterMessage is string && data.ReceiptFooterMessage.size() <= 500));
     }
 
     function isValidUser(data) {

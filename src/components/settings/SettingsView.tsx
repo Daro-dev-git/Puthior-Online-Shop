@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { AppUser } from '../../types';
 import {
@@ -15,6 +15,9 @@ import {
   Eye,
   EyeOff,
   CheckCircle2,
+  Store,
+  Receipt,
+  Sparkles,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -45,6 +48,21 @@ export const SettingsView: React.FC = () => {
   const [currency, setCurrency] = useState(settings.Currency);
   const [lowStockThreshold, setLowStockThreshold] = useState(settings.LowStockThreshold);
   const [receiptFooter, setReceiptFooter] = useState(settings.ReceiptFooterMessage);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  // Sync settings when loaded or changed from cloud Firestore database
+  useEffect(() => {
+    if (settings) {
+      setStoreName(settings.StoreName || '');
+      setTagline(settings.Tagline || '');
+      setPhone(settings.Phone || '');
+      setEmail(settings.Email || '');
+      setAddress(settings.Address || '');
+      setCurrency(settings.Currency || '$');
+      setLowStockThreshold(settings.LowStockThreshold || 5);
+      setReceiptFooter(settings.ReceiptFooterMessage || '');
+    }
+  }, [settings]);
 
   // New size input
   const [newSizeValue, setNewSizeValue] = useState('');
@@ -76,18 +94,23 @@ export const SettingsView: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<AppUser | null>(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
 
-  const handleSaveStoreSettings = (e: React.FormEvent) => {
+  const handleSaveStoreSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateSettings({
-      StoreName: storeName.trim(),
-      Tagline: tagline.trim(),
-      Phone: phone.trim(),
-      Email: email.trim(),
-      Address: address.trim(),
-      Currency: currency,
-      LowStockThreshold: lowStockThreshold,
-      ReceiptFooterMessage: receiptFooter.trim(),
-    });
+    setIsSavingSettings(true);
+    try {
+      await updateSettings({
+        StoreName: storeName.trim(),
+        Tagline: tagline.trim(),
+        Phone: phone.trim(),
+        Email: email.trim(),
+        Address: address.trim(),
+        Currency: currency,
+        LowStockThreshold: lowStockThreshold,
+        ReceiptFooterMessage: receiptFooter.trim(),
+      });
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   const handleAddSizeSubmit = (e: React.FormEvent) => {
@@ -636,101 +659,188 @@ export const SettingsView: React.FC = () => {
       )}
 
       {/* Store Master Info Form */}
-      <form
-        onSubmit={handleSaveStoreSettings}
-        className="bg-white p-5 rounded-xl border border-stone-200 shadow-xs space-y-4"
-      >
-        <div className="flex items-center justify-between pb-2 border-b border-stone-100">
-          <h2 className="text-sm font-bold text-stone-900">Store Profile & Receipt Details</h2>
-          <button
-            type="submit"
-            className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>Save Store Info</span>
-          </button>
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <form
+          onSubmit={handleSaveStoreSettings}
+          className="lg:col-span-7 bg-white p-5 rounded-xl border border-stone-200 shadow-xs space-y-4"
+        >
+          <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <Store className="w-4 h-4 text-rose-600" />
+                <h2 className="text-sm font-bold text-stone-900">Store Profile & Receipt Details</h2>
+              </div>
+              <p className="text-[11px] text-stone-500 mt-0.5">
+                Saved permanently in Firestore and printed on thermal customer receipts
+              </p>
+            </div>
+            <button
+              type="submit"
+              disabled={isSavingSettings}
+              className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isSavingSettings ? 'Saving to Cloud...' : 'Save Store Info'}</span>
+            </button>
+          </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Store Name (Header / Brand)
+              </label>
+              <input
+                type="text"
+                value={storeName}
+                onChange={(e) => setStoreName(e.target.value)}
+                placeholder="e.g. Girl Dress Shop"
+                className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-bold text-stone-900 focus:bg-white focus:ring-2 focus:ring-rose-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Store Tagline / Slogan
+              </label>
+              <input
+                type="text"
+                value={tagline}
+                onChange={(e) => setTagline(e.target.value)}
+                placeholder="e.g. Couture & Casual Dresses for Girls"
+                className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Store Phone Number
+              </label>
+              <input
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="e.g. +1 (555) 345-9876"
+                className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Store Contact Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="e.g. contact@girldressshop.com"
+                className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Boutique Street Address
+              </label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="e.g. 742 Boutique Blossom Ave, Suite 101, New York, NY"
+                className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Currency Symbol
+              </label>
+              <input
+                type="text"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Low Stock Threshold
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={lowStockThreshold}
+                onChange={(e) => setLowStockThreshold(parseInt(e.target.value, 10) || 5)}
+                className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white font-mono-numbers"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Receipt Footer Message & Return Policy
+              </label>
+              <textarea
+                rows={2}
+                value={receiptFooter}
+                onChange={(e) => setReceiptFooter(e.target.value)}
+                placeholder="e.g. Thank you for shopping at Girl Dress Shop! Returns accepted within 14 days."
+                className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+          </div>
+        </form>
+
+        {/* Live Thermal Receipt Preview */}
+        <div className="lg:col-span-5 bg-stone-50 p-5 rounded-xl border border-stone-200 shadow-xs flex flex-col justify-between space-y-3">
           <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">Store Name</label>
-            <input
-              type="text"
-              value={storeName}
-              onChange={(e) => setStoreName(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
-            />
+            <div className="flex items-center justify-between pb-2 border-b border-stone-200 text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-stone-800">
+                <Receipt className="w-4 h-4 text-rose-600" />
+                <span>Live Receipt Header Preview</span>
+              </div>
+              <span className="text-[10px] text-stone-500">Auto-Formats</span>
+            </div>
+
+            {/* Thermal Slip Simulation */}
+            <div className="mt-3 bg-white p-4 border border-stone-300 rounded-lg shadow-2xs font-sans text-stone-900 text-xs space-y-3">
+              <div className="text-center pb-3 border-b border-dashed border-stone-300">
+                <div className="font-bold text-base text-stone-900 leading-tight">
+                  {storeName || 'Girl Dress Shop'}
+                </div>
+                {tagline && <div className="text-[11px] text-stone-500 mt-0.5">{tagline}</div>}
+                {address && <div className="text-[11px] text-stone-600 mt-1">{address}</div>}
+                {phone && <div className="text-[11px] text-stone-600">{phone}</div>}
+                {email && <div className="text-[10px] text-stone-400">{email}</div>}
+              </div>
+
+              <div className="text-[11px] text-stone-500 space-y-0.5 font-mono">
+                <div className="flex justify-between">
+                  <span>ORDER: #ORD-2026-0042</span>
+                  <span>10:45 AM</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>CASHIER: Staff #1001</span>
+                  <span>CASH SALE</span>
+                </div>
+              </div>
+
+              <div className="py-2 border-y border-dashed border-stone-300 text-[11px] space-y-1">
+                <div className="flex justify-between font-medium">
+                  <span>1x Princess Floral Gown (4Y)</span>
+                  <span className="font-mono-numbers">{currency}35.00</span>
+                </div>
+                <div className="flex justify-between font-bold text-stone-900 pt-1">
+                  <span>TOTAL DUE:</span>
+                  <span className="font-mono-numbers">{currency}35.00</span>
+                </div>
+              </div>
+
+              <div className="text-center text-[10px] text-stone-500 italic pt-1">
+                {receiptFooter || 'Thank you for your business!'}
+              </div>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">Tagline</label>
-            <input
-              type="text"
-              value={tagline}
-              onChange={(e) => setTagline(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">Phone</label>
-            <input
-              type="text"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-stone-700 mb-1">Boutique Address</label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">Currency Symbol</label>
-            <input
-              type="text"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">
-              Low Stock Warning Level
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={lowStockThreshold}
-              onChange={(e) => setLowStockThreshold(parseInt(e.target.value, 10) || 5)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-stone-700 mb-1">
-              Receipt Footer Note
-            </label>
-            <input
-              type="text"
-              value={receiptFooter}
-              onChange={(e) => setReceiptFooter(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
-            />
+
+          <div className="text-[11px] text-stone-500 bg-white p-2.5 rounded-lg border border-stone-200/80 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Updates apply immediately across all printed customer receipts and barcodes.</span>
           </div>
         </div>
-      </form>
+      </div>
 
       {/* Predefined Sizes Management */}
       <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-xs space-y-3">
