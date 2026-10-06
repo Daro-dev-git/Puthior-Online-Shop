@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { AppUser } from '../../types';
+import { isValidEmail, normalizeEmail } from '../../utils/validators';
+import { EmailAlertModal } from '../common/EmailAlertModal';
 import {
   ShieldCheck,
   User,
@@ -18,6 +20,11 @@ import {
   Store,
   Receipt,
   Sparkles,
+  Mail,
+  BellRing,
+  Bell,
+  Send,
+  Check,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -37,6 +44,9 @@ export const SettingsView: React.FC = () => {
     updateUserAccount,
     deleteUserAccount,
     showToast,
+    emailAlertRecipients,
+    sendLowStockEmailAlert,
+    kpis,
   } = useStore();
 
   // Store form state
@@ -48,7 +58,10 @@ export const SettingsView: React.FC = () => {
   const [currency, setCurrency] = useState(settings.Currency);
   const [lowStockThreshold, setLowStockThreshold] = useState(settings.LowStockThreshold);
   const [receiptFooter, setReceiptFooter] = useState(settings.ReceiptFooterMessage);
+  const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(settings.EmailAlertsEnabled ?? true);
+  const [alertEmailRecipients, setAlertEmailRecipients] = useState(settings.AlertEmailRecipients || '');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [showEmailAlertModal, setShowEmailAlertModal] = useState(false);
 
   // Sync settings when loaded or changed from cloud Firestore database
   useEffect(() => {
@@ -61,6 +74,8 @@ export const SettingsView: React.FC = () => {
       setCurrency(settings.Currency || '$');
       setLowStockThreshold(settings.LowStockThreshold || 5);
       setReceiptFooter(settings.ReceiptFooterMessage || '');
+      setEmailAlertsEnabled(settings.EmailAlertsEnabled ?? true);
+      setAlertEmailRecipients(settings.AlertEmailRecipients || '');
     }
   }, [settings]);
 
@@ -75,6 +90,8 @@ export const SettingsView: React.FC = () => {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newStaffNumber, setNewStaffNumber] = useState('');
   const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffReceiveAlerts, setNewStaffReceiveAlerts] = useState(true);
   const [newStaffRole, setNewStaffRole] = useState<'admin' | 'sales_staff'>('sales_staff');
   const [newStaffPassword, setNewStaffPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -84,6 +101,8 @@ export const SettingsView: React.FC = () => {
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [editName, setEditName] = useState('');
   const [editNumber, setEditNumber] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editReceiveAlerts, setEditReceiveAlerts] = useState(true);
   const [editRole, setEditRole] = useState<'admin' | 'sales_staff'>('sales_staff');
   const [editStatus, setEditStatus] = useState<'active' | 'inactive'>('active');
   const [editPassword, setEditPassword] = useState('');
@@ -107,6 +126,8 @@ export const SettingsView: React.FC = () => {
         Currency: currency,
         LowStockThreshold: lowStockThreshold,
         ReceiptFooterMessage: receiptFooter.trim(),
+        EmailAlertsEnabled: emailAlertsEnabled,
+        AlertEmailRecipients: alertEmailRecipients.trim(),
       });
     } finally {
       setIsSavingSettings(false);
@@ -135,6 +156,8 @@ export const SettingsView: React.FC = () => {
     setEditingUser(user);
     setEditName(user.name);
     setEditNumber(user.userNumber);
+    setEditEmail(user.email || '');
+    setEditReceiveAlerts(user.receiveStockAlerts ?? true);
     setEditRole(user.role);
     setEditStatus(user.status || 'active');
     setEditPassword(user.password);
@@ -151,12 +174,19 @@ export const SettingsView: React.FC = () => {
       return;
     }
 
+    if (editEmail.trim() && !isValidEmail(editEmail)) {
+      showToast('Please enter a valid email address (e.g. staff@girldressshop.com)', 'error');
+      return;
+    }
+
     setIsSavingUser(true);
     try {
       const res = await updateUserAccount({
         ...editingUser,
         name: editName.trim(),
         userNumber: editNumber.trim(),
+        email: editEmail.trim() ? normalizeEmail(editEmail) : undefined,
+        receiveStockAlerts: editReceiveAlerts,
         role: editRole,
         status: editStatus,
         password: editPassword.trim(),
@@ -180,11 +210,18 @@ export const SettingsView: React.FC = () => {
       return;
     }
 
+    if (newStaffEmail.trim() && !isValidEmail(newStaffEmail)) {
+      showToast('Please enter a valid email address (e.g. staff@girldressshop.com)', 'error');
+      return;
+    }
+
     setIsSubmittingUser(true);
     try {
       const res = await addUserAccount({
         userNumber: newStaffNumber.trim(),
         name: newStaffName.trim(),
+        email: newStaffEmail.trim() ? normalizeEmail(newStaffEmail) : undefined,
+        receiveStockAlerts: newStaffReceiveAlerts,
         role: newStaffRole,
         password: newStaffPassword.trim(),
         phone: newStaffNumber.trim(),
@@ -194,7 +231,9 @@ export const SettingsView: React.FC = () => {
       if (res.success) {
         setNewStaffNumber('');
         setNewStaffName('');
+        setNewStaffEmail('');
         setNewStaffPassword('');
+        setNewStaffReceiveAlerts(true);
         setShowAddUserModal(false);
       } else {
         showToast(res.error || 'Failed to create user', 'error');
@@ -278,6 +317,7 @@ export const SettingsView: React.FC = () => {
               <tr>
                 <th className="px-4 py-2.5">User Number</th>
                 <th className="px-4 py-2.5">Full Name</th>
+                <th className="px-4 py-2.5">Email & Alerts</th>
                 <th className="px-4 py-2.5">Role</th>
                 <th className="px-4 py-2.5">Password</th>
                 <th className="px-4 py-2.5">Status</th>
@@ -296,6 +336,37 @@ export const SettingsView: React.FC = () => {
                       <span className="ml-2 text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-medium">
                         Current Session
                       </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {u.email ? (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono text-stone-800 text-[11px] flex items-center gap-1">
+                          <Mail className="w-3 h-3 text-stone-400" />
+                          <span>{u.email}</span>
+                        </span>
+                        {u.receiveStockAlerts !== false ? (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 text-[9px] font-semibold"
+                            title="Subscribed to Low Stock Email Alerts"
+                          >
+                            <BellRing className="w-2.5 h-2.5 text-rose-600" />
+                            <span>Alerts On</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-stone-400">Alerts Off</span>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditUser(u)}
+                        className="inline-flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-700 font-semibold cursor-pointer underline decoration-rose-300"
+                        title="Add a valid email address to this user role for stock alert notifications"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Valid Email</span>
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -352,6 +423,193 @@ export const SettingsView: React.FC = () => {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Low Stock Email Notification Alerts System (Multi-Role Email Delivery) */}
+      <div className="bg-white p-5 rounded-xl border border-rose-200/80 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-rose-50 text-rose-600 border border-rose-200">
+              <Mail className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-bold text-stone-900">
+                  Low Stock Email Alert Notifications
+                </h2>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800">
+                  <BellRing className="w-3 h-3" />
+                  <span>{emailAlertRecipients.length} Active {emailAlertRecipients.length === 1 ? 'Recipient' : 'Recipients'}</span>
+                </span>
+              </div>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Automatically alerts authorized Administrator and Sales Staff accounts when dress variants fall at or below threshold (≤{settings.LowStockThreshold || 5} units).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowEmailAlertModal(true)}
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Preview & Send Alert</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Active Recipients Roster */}
+          <div className="p-4 bg-stone-50 rounded-xl border border-stone-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-pink-600" />
+                <span>Authorized User Roles with Valid Emails</span>
+              </span>
+              <span className="text-[11px] text-stone-500 font-mono-numbers">
+                {users.filter((u) => u.email && isValidEmail(u.email)).length} / {users.length} users
+              </span>
+            </div>
+
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {users.map((u) => {
+                const hasValid = u.email && isValidEmail(u.email);
+                return (
+                  <div
+                    key={u.userId}
+                    className="p-2.5 bg-white border border-stone-200 rounded-lg flex items-center justify-between text-xs gap-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold text-stone-900">{u.name}</span>
+                        <span className="font-mono text-stone-500 text-[10px]">#{u.userNumber}</span>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${
+                            u.role === 'admin'
+                              ? 'bg-purple-100 text-purple-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}
+                        >
+                          {u.role === 'admin' ? 'Admin' : 'Sales Staff'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] mt-0.5">
+                        {hasValid ? (
+                          <span className="font-mono text-stone-700 flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-emerald-600" />
+                            <span>{u.email}</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 italic flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-500" />
+                            <span>No valid email added</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-1.5">
+                      {hasValid ? (
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                            u.receiveStockAlerts !== false
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-stone-100 text-stone-500'
+                          }`}
+                        >
+                          {u.receiveStockAlerts !== false ? 'Alerts ON' : 'Muted'}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditUser(u)}
+                          className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[10px] font-semibold cursor-pointer"
+                        >
+                          + Add Email
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-[11px] text-stone-500">
+              Tip: Both <strong>Administrator</strong> and <strong>Sales Staff</strong> roles can be assigned valid emails to receive stock warnings and restock notices.
+            </p>
+          </div>
+
+          {/* Alert Configuration & Dispatch Options */}
+          <div className="p-4 bg-stone-50 rounded-xl border border-stone-200 space-y-3.5 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-stone-800">
+                  Notification Dispatch Preferences
+                </span>
+                <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={emailAlertsEnabled}
+                    onChange={(e) => setEmailAlertsEnabled(e.target.checked)}
+                    className="rounded text-rose-600 focus:ring-rose-500"
+                  />
+                  <span className="font-semibold">Enable Stock Email Alerts</span>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Additional External Email Recipients (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. manager@domain.com, purchasing@domain.com"
+                  value={alertEmailRecipients}
+                  onChange={(e) => setAlertEmailRecipients(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500"
+                />
+                <p className="text-[10px] text-stone-500 mt-1">
+                  Comma-separated emails for suppliers or external store owners.
+                </p>
+              </div>
+
+              <div className="p-2.5 bg-white border border-stone-200 rounded-lg text-xs space-y-1">
+                <div className="flex justify-between text-stone-600">
+                  <span>Current Low Stock Count:</span>
+                  <span className="font-bold text-rose-600 font-mono-numbers">
+                    {kpis.lowStockCount} items below threshold
+                  </span>
+                </div>
+                <div className="flex justify-between text-stone-600">
+                  <span>Defined Alert Threshold:</span>
+                  <span className="font-bold font-mono-numbers">
+                    ≤{settings.LowStockThreshold || 5} units
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-between border-t border-stone-200">
+              <span className="text-[10px] text-stone-500">
+                {settings.LastAlertEmailSent
+                  ? `Last sent: ${new Date(settings.LastAlertEmailSent).toLocaleDateString()} at ${new Date(settings.LastAlertEmailSent).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : 'No alerts dispatched yet today'}
+              </span>
+
+              <button
+                type="button"
+                onClick={handleSaveStoreSettings}
+                disabled={isSavingSettings}
+                className="px-3.5 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSavingSettings ? 'Saving...' : 'Save Alert Settings'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -426,6 +684,56 @@ export const SettingsView: React.FC = () => {
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Staff Email Address & Alert Notification Config */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-stone-700">
+                    Email Address (for Low Stock Notifications & Alerts)
+                  </label>
+                  {editEmail.trim() ? (
+                    isValidEmail(editEmail) ? (
+                      <span className="text-[10px] font-semibold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                        <span>Valid Email</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-amber-700 flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                        <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                        <span>Invalid Format</span>
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-[10px] text-stone-400">Optional but recommended</span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="email"
+                    placeholder="e.g. staff@girldressshop.com"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  />
+                  <Mail className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                </div>
+                <p className="text-[10px] text-stone-500 mt-1">
+                  Both Administrator and Sales Staff roles can have a valid email to receive automatic low-stock notifications.
+                </p>
+              </div>
+
+              {/* Receive Stock Alerts Checkbox */}
+              <div className="p-2.5 bg-stone-50 border border-stone-200 rounded-lg">
+                <label className="flex items-center gap-2 text-xs font-medium text-stone-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editReceiveAlerts}
+                    onChange={(e) => setEditReceiveAlerts(e.target.checked)}
+                    className="rounded text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span>Subscribe this user account to Low Stock Email Alerts</span>
+                </label>
               </div>
 
               <div>
@@ -534,6 +842,56 @@ export const SettingsView: React.FC = () => {
                   <option value="sales_staff">Sales Staff (POS, Sales & Inventory movements)</option>
                   <option value="admin">Administrator (Full Access & Cost/Profit Reports)</option>
                 </select>
+              </div>
+
+              {/* Staff Email Address & Alert Notification Config */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-stone-700">
+                    Email Address (for Low Stock Notifications & Alerts)
+                  </label>
+                  {newStaffEmail.trim() ? (
+                    isValidEmail(newStaffEmail) ? (
+                      <span className="text-[10px] font-semibold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                        <span>Valid Email</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-amber-700 flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                        <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                        <span>Invalid Format</span>
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-[10px] text-stone-400">Optional but recommended</span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="email"
+                    placeholder="e.g. jessica@girldressshop.com"
+                    value={newStaffEmail}
+                    onChange={(e) => setNewStaffEmail(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  />
+                  <Mail className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                </div>
+                <p className="text-[10px] text-stone-500 mt-1">
+                  Both Administrator and Sales Staff roles can have a valid email to receive automatic low-stock notifications.
+                </p>
+              </div>
+
+              {/* Receive Stock Alerts Checkbox */}
+              <div className="p-2.5 bg-stone-50 border border-stone-200 rounded-lg">
+                <label className="flex items-center gap-2 text-xs font-medium text-stone-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newStaffReceiveAlerts}
+                    onChange={(e) => setNewStaffReceiveAlerts(e.target.checked)}
+                    className="rounded text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span>Subscribe this new account to Low Stock Email Alerts</span>
+                </label>
               </div>
 
               <div>
@@ -964,6 +1322,12 @@ export const SettingsView: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* Email Alert Preview & Dispatch Modal */}
+      <EmailAlertModal
+        isOpen={showEmailAlertModal}
+        onClose={() => setShowEmailAlertModal(false)}
+      />
     </div>
   );
 };

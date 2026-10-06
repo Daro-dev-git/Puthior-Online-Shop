@@ -68,7 +68,9 @@ service cloud.firestore {
         && (!('Phone' in data) || (data.Phone is string && data.Phone.size() <= 100))
         && (!('Email' in data) || (data.Email is string && data.Email.size() <= 150))
         && (!('Address' in data) || (data.Address is string && data.Address.size() <= 500))
-        && (!('ReceiptFooterMessage' in data) || (data.ReceiptFooterMessage is string && data.ReceiptFooterMessage.size() <= 500));
+        && (!('ReceiptFooterMessage' in data) || (data.ReceiptFooterMessage is string && data.ReceiptFooterMessage.size() <= 500))
+        && (!('EmailAlertsEnabled' in data) || data.EmailAlertsEnabled is bool)
+        && (!('AlertEmailRecipients' in data) || (data.AlertEmailRecipients is string && data.AlertEmailRecipients.size() <= 500));
     }
 
     function isValidUser(data) {
@@ -76,7 +78,9 @@ service cloud.firestore {
         && data.userNumber is string && data.userNumber.size() > 0 && data.userNumber.size() <= 50
         && data.name is string && data.name.size() > 0 && data.name.size() <= 150
         && data.role in ['admin', 'sales_staff', 'staff']
-        && (!('password' in data) || (data.password is string && data.password.size() <= 128));
+        && (!('password' in data) || (data.password is string && data.password.size() <= 128))
+        && (!('email' in data) || (data.email is string && data.email.size() <= 150))
+        && (!('receiveStockAlerts' in data) || data.receiveStockAlerts is bool);
     }
 
     // Collection Security Rules

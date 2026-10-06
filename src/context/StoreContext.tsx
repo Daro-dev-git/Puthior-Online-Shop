@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import {
   Product,
   ProductVariant,
@@ -34,11 +34,9 @@ import {
   subscribeOrders,
   subscribeTransactions,
   subscribeCustomers,
-  subscribeDressTypes,
-  subscribeSizes,
-  subscribeColors,
-  subscribeSettings,
   subscribeUsers,
+  loadStaticCollectionCacheFirst,
+  loadSettingsCacheFirst,
   saveProductToFirestore,
   deleteProductFromFirestore,
   saveOrderToFirestore,
@@ -55,6 +53,7 @@ import {
   deleteUserFromFirestore,
 } from '../firebase/firestoreService';
 import { subscribeQuotaStatus, FIRESTORE_UPGRADE_URL } from '../firebase/config';
+import { isValidEmail, normalizeEmail } from '../utils/validators';
 
 interface ToastNotification {
   id: string;
@@ -221,6 +220,17 @@ interface StoreContextType {
     sellingPrice: number;
     image?: string;
   }>;
+
+  // Low Stock Email Notification System
+  emailAlertRecipients: string[];
+  sendLowStockEmailAlert: (customNotes?: string) => Promise<{
+    success: boolean;
+    recipients: string[];
+    subject: string;
+    body: string;
+    mailtoUrl: string;
+    error?: string;
+  }>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -235,14 +245,63 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [activeReceiptOrder, setActiveReceiptOrder] = useState<Order | null>(null);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState<boolean>(false);
 
-  // Firestore Collections State
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  const [dressTypes, setDressTypes] = useState<DressType[]>(INITIAL_DRESS_TYPES);
-  const [sizes, setSizes] = useState<SizeItem[]>(INITIAL_SIZES);
-  const [colors, setColors] = useState<ColorItem[]>(INITIAL_COLORS);
-  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
-  const [transactions, setTransactions] = useState<InventoryTransaction[]>(INITIAL_TRANSACTIONS);
+  // Firestore Collections State with resilient local caching for offline / quota limits
+  const [products, setProducts] = useState<Product[]>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_products');
+      return cached ? JSON.parse(cached) : INITIAL_PRODUCTS;
+    } catch {
+      return INITIAL_PRODUCTS;
+    }
+  });
+  const [dressTypes, setDressTypes] = useState<DressType[]>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_dress_types');
+      return cached ? JSON.parse(cached) : INITIAL_DRESS_TYPES;
+    } catch {
+      return INITIAL_DRESS_TYPES;
+    }
+  });
+  const [sizes, setSizes] = useState<SizeItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_sizes');
+      return cached ? JSON.parse(cached) : INITIAL_SIZES;
+    } catch {
+      return INITIAL_SIZES;
+    }
+  });
+  const [colors, setColors] = useState<ColorItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_colors');
+      return cached ? JSON.parse(cached) : INITIAL_COLORS;
+    } catch {
+      return INITIAL_COLORS;
+    }
+  });
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_customers');
+      return cached ? JSON.parse(cached) : INITIAL_CUSTOMERS;
+    } catch {
+      return INITIAL_CUSTOMERS;
+    }
+  });
+  const [orders, setOrders] = useState<Order[]>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_orders');
+      return cached ? JSON.parse(cached) : INITIAL_ORDERS;
+    } catch {
+      return INITIAL_ORDERS;
+    }
+  });
+  const [transactions, setTransactions] = useState<InventoryTransaction[]>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_transactions');
+      return cached ? JSON.parse(cached) : INITIAL_TRANSACTIONS;
+    } catch {
+      return INITIAL_TRANSACTIONS;
+    }
+  });
   const [priceCategories] = useState<PriceCategory[]>(INITIAL_PRICE_CATEGORIES);
   const [settings, setSettings] = useState<StoreSettings>(() => {
     try {
@@ -252,7 +311,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return INITIAL_SETTINGS;
     }
   });
-  const [users, setUsers] = useState<AppUser[]>(INITIAL_USERS);
+  const [users, setUsers] = useState<AppUser[]>(() => {
+    try {
+      const cached = localStorage.getItem('gds_cached_users');
+      return cached ? JSON.parse(cached) : INITIAL_USERS;
+    } catch {
+      return INITIAL_USERS;
+    }
+  });
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(true);
 
   // Session & Auth State
@@ -288,10 +354,44 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // 1. Initialize Firestore & Attach Live Subscriptions for All Collections
   useEffect(() => {
-    // Seed initial data if empty in Firestore
+    // Seed initial data if empty in Firestore (checked from cache first)
     seedInitialFirestoreData().catch(console.error);
 
-    // Subscribe to live Firestore changes across all clients/sessions
+    // Static lookup collections: Load Cache-First from localStorage / IndexedDB cache
+    // Hits server ONLY if cache is completely empty on clean boot (saves 1,000s of reads daily)
+    loadStaticCollectionCacheFirst<DressType>('dress_types', 'gds_cached_dress_types', INITIAL_DRESS_TYPES)
+      .then((list) => {
+        if (list && list.length > 0) {
+          setDressTypes((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list));
+        }
+      })
+      .catch(() => {});
+
+    loadStaticCollectionCacheFirst<SizeItem>('sizes', 'gds_cached_sizes', INITIAL_SIZES)
+      .then((list) => {
+        if (list && list.length > 0) {
+          setSizes((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list));
+        }
+      })
+      .catch(() => {});
+
+    loadStaticCollectionCacheFirst<ColorItem>('colors', 'gds_cached_colors', INITIAL_COLORS)
+      .then((list) => {
+        if (list && list.length > 0) {
+          setColors((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list));
+        }
+      })
+      .catch(() => {});
+
+    loadSettingsCacheFirst()
+      .then((loadedSettings) => {
+        if (loadedSettings) {
+          setSettings((prev) => (JSON.stringify(prev) === JSON.stringify(loadedSettings) ? prev : loadedSettings));
+        }
+      })
+      .catch(() => {});
+
+    // Dynamic collections: Subscribe with strict limits (products <= 30, orders <= 25, tx <= 25, cust <= 25)
     const unsubs: Array<() => void> = [];
 
     // Listen to Firebase Quota status
@@ -301,66 +401,81 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       })
     );
 
+    // 1. Products (increased limit to 100 to ensure all 40+ products load completely)
     unsubs.push(
       subscribeProducts((list) => {
-        if (list.length > 0) setProducts(list);
-      })
+        if (list.length > 0) {
+          setProducts((prev) => {
+            if (prev.length === list.length && JSON.stringify(prev) === JSON.stringify(list)) {
+              return prev;
+            }
+            try {
+              localStorage.setItem('gds_cached_products', JSON.stringify(list));
+            } catch {}
+            return list;
+          });
+        }
+      }, undefined, 100)
     );
 
-    unsubs.push(
-      subscribeDressTypes((list) => {
-        if (list.length > 0) setDressTypes(list);
-      })
-    );
-
-    unsubs.push(
-      subscribeSizes((list) => {
-        if (list.length > 0) setSizes(list);
-      })
-    );
-
-    unsubs.push(
-      subscribeColors((list) => {
-        if (list.length > 0) setColors(list);
-      })
-    );
-
+    // 2. Customers (limited to 25 items max)
     unsubs.push(
       subscribeCustomers((list) => {
-        setCustomers(list);
-      })
+        setCustomers((prev) => {
+          if (prev.length === list.length && JSON.stringify(prev) === JSON.stringify(list)) {
+            return prev;
+          }
+          try {
+            localStorage.setItem('gds_cached_customers', JSON.stringify(list));
+          } catch {}
+          return list;
+        });
+      }, undefined, 25)
     );
 
+    // 3. Orders (limited to 25 recent items with orderBy createdAt desc)
     unsubs.push(
       subscribeOrders((list) => {
-        setOrders(list);
-      })
+        setOrders((prev) => {
+          if (prev.length === list.length && JSON.stringify(prev) === JSON.stringify(list)) {
+            return prev;
+          }
+          try {
+            localStorage.setItem('gds_cached_orders', JSON.stringify(list));
+          } catch {}
+          return list;
+        });
+      }, undefined, 25)
     );
 
+    // 4. Inventory Transactions (limited to 25 recent items with orderBy createdAt desc)
     unsubs.push(
       subscribeTransactions((list) => {
-        setTransactions(list);
-      })
-    );
-
-    unsubs.push(
-      subscribeSettings((data) => {
-        if (data) {
-          const merged: StoreSettings = { ...INITIAL_SETTINGS, ...data };
-          setSettings(merged);
-          try {
-            localStorage.setItem('gds_cached_store_settings', JSON.stringify(merged));
-          } catch {
-            // ignore
+        setTransactions((prev) => {
+          if (prev.length === list.length && JSON.stringify(prev) === JSON.stringify(list)) {
+            return prev;
           }
-        }
-      })
+          try {
+            localStorage.setItem('gds_cached_transactions', JSON.stringify(list));
+          } catch {}
+          return list;
+        });
+      }, undefined, 25)
     );
 
+    // 5. Users (cache prioritized)
     unsubs.push(
       subscribeUsers((list) => {
         if (list.length > 0) {
-          setUsers(list);
+          setUsers((prev) => {
+            if (prev.length === list.length && JSON.stringify(prev) === JSON.stringify(list)) {
+              return prev;
+            }
+            try {
+              localStorage.setItem('gds_cached_users', JSON.stringify(list));
+            } catch {}
+            return list;
+          });
           // Session validation: If current user was deleted or deactivated, log out
           setCurrentUser((current) => {
             if (!current) return null;
@@ -461,11 +576,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return { success: false, error: `User Number "${cleanNum}" already exists! Please use a unique number.` };
     }
 
+    // Validate email address format if provided
+    let cleanEmail: string | undefined = undefined;
+    if (newUser.email !== undefined && newUser.email.trim() !== '') {
+      if (!isValidEmail(newUser.email)) {
+        return {
+          success: false,
+          error: `"${newUser.email}" is not a valid email format. Please provide a valid email (e.g. staff@girldressshop.com).`,
+        };
+      }
+      cleanEmail = normalizeEmail(newUser.email);
+    }
+
     const created: AppUser = {
       ...newUser,
       userNumber: cleanNum,
       name: newUser.name.trim(),
       password: newUser.password.trim(),
+      email: cleanEmail,
+      receiveStockAlerts: newUser.receiveStockAlerts ?? true,
       userId: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       status: newUser.status || 'active',
       lastLogin: '',
@@ -497,11 +626,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return { success: false, error: `User Number "${cleanNum}" is already assigned to "${duplicate.name}".` };
     }
 
+    // Validate email address format if provided
+    let cleanEmail: string | undefined = undefined;
+    if (user.email !== undefined && user.email.trim() !== '') {
+      if (!isValidEmail(user.email)) {
+        return {
+          success: false,
+          error: `"${user.email}" is not a valid email format. Please provide a valid email (e.g. staff@girldressshop.com).`,
+        };
+      }
+      cleanEmail = normalizeEmail(user.email);
+    }
+
     const sanitizedUser: AppUser = {
       ...user,
       userNumber: cleanNum,
       name: user.name.trim(),
       password: user.password.trim(),
+      email: cleanEmail,
+      receiveStockAlerts: user.receiveStockAlerts ?? true,
     };
 
     try {
@@ -550,18 +693,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // Helper Lookups
-  const getDressTypeName = (id: string): string => {
+  // Helper Lookups (memoized with useCallback to maintain stable reference identity)
+  const getDressTypeName = useCallback((id: string): string => {
     const found = dressTypes.find((dt) => dt.DressTypeID === id);
     return found ? found.Name : 'Girl Dress';
-  };
+  }, [dressTypes]);
 
-  const getProductByCode = (code: string): Product | undefined => {
+  const getProductByCode = useCallback((code: string): Product | undefined => {
     if (!code) return undefined;
     return products.find((p) => p.ProductCode.trim().toUpperCase() === code.trim().toUpperCase());
-  };
+  }, [products]);
 
-  const getVariant = (code: string, size: string, color: string): ProductVariant | undefined => {
+  const getVariant = useCallback((code: string, size: string, color: string): ProductVariant | undefined => {
     const prod = getProductByCode(code);
     if (!prod) return undefined;
     return prod.Variants.find(
@@ -569,9 +712,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         v.Size.trim().toLowerCase() === size.trim().toLowerCase() &&
         v.Color.trim().toLowerCase() === color.trim().toLowerCase()
     );
-  };
+  }, [getProductByCode]);
 
-  const getAvailableSizesForCode = (code: string): string[] => {
+  const getAvailableSizesForCode = useCallback((code: string): string[] => {
     const prod = getProductByCode(code);
     if (!prod) return [];
     const sizeSet = new Set<string>();
@@ -583,9 +726,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const numB = parseInt(b, 10);
       return !isNaN(numA) && !isNaN(numB) ? numA - numB : a.localeCompare(b);
     });
-  };
+  }, [getProductByCode]);
 
-  const getAvailableColorsForCodeAndSize = (code: string, size: string): string[] => {
+  const getAvailableColorsForCodeAndSize = useCallback((code: string, size: string): string[] => {
     const prod = getProductByCode(code);
     if (!prod) return [];
     const colorSet = new Set<string>();
@@ -595,7 +738,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
     });
     return Array.from(colorSet);
-  };
+  }, [getProductByCode]);
 
   // ---------------- Core Business Operations ----------------
 
@@ -1518,6 +1661,118 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return list.sort((a, b) => a.currentStock - b.currentStock);
   }, [products, settings.LowStockThreshold]);
 
+  // Active email alert recipients list (admins + staff who opted in + store alert emails)
+  const emailAlertRecipients = useMemo(() => {
+    const set = new Set<string>();
+
+    // 1. Staff and admin users with valid emails who have alerts enabled
+    users.forEach((u) => {
+      if (u.status !== 'inactive' && u.email && isValidEmail(u.email)) {
+        if (u.role === 'admin' || u.receiveStockAlerts !== false) {
+          set.add(normalizeEmail(u.email));
+        }
+      }
+    });
+
+    // 2. AlertEmailRecipients from store settings (comma/space/semicolon separated)
+    if (settings.AlertEmailRecipients) {
+      settings.AlertEmailRecipients.split(/[,;\s]+/).forEach((em) => {
+        if (isValidEmail(em)) {
+          set.add(normalizeEmail(em));
+        }
+      });
+    }
+
+    // 3. Store contact email if valid and set is empty
+    if (set.size === 0 && settings.Email && isValidEmail(settings.Email)) {
+      set.add(normalizeEmail(settings.Email));
+    }
+
+    return Array.from(set);
+  }, [users, settings.AlertEmailRecipients, settings.Email]);
+
+  // Dispatch / Format Low Stock Email Alert Notification
+  const sendLowStockEmailAlert = async (
+    customNotes?: string
+  ): Promise<{
+    success: boolean;
+    recipients: string[];
+    subject: string;
+    body: string;
+    mailtoUrl: string;
+    error?: string;
+  }> => {
+    const recipients = emailAlertRecipients;
+    const threshold = settings.LowStockThreshold || 5;
+    const storeTitle = settings.StoreName || 'Girl Dress Shop';
+    const alertItems = lowStockItemsList;
+
+    if (alertItems.length === 0) {
+      return {
+        success: false,
+        recipients: [],
+        subject: '',
+        body: '',
+        mailtoUrl: '',
+        error: 'No product variants are currently below threshold. All stock levels are healthy.',
+      };
+    }
+
+    const subject = `[Stock Alert] ${storeTitle}: ${alertItems.length} Products Below Threshold (≤${threshold} units)`;
+
+    const dateStr = new Date().toLocaleString('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    let bodyText = `INVENTORY RESTOCK ALERT - ${storeTitle.toUpperCase()}\n`;
+    bodyText += `Date/Time: ${dateStr}\n`;
+    bodyText += `Defined Low Stock Threshold: ${threshold} available units\n`;
+    bodyText += `Total Alert Items: ${alertItems.length} variant(s) requiring restock\n`;
+    bodyText += `\n------------------------------------------------------------\n`;
+    bodyText += `ITEMS BELOW THRESHOLD:\n`;
+    bodyText += `------------------------------------------------------------\n`;
+
+    alertItems.forEach((item, idx) => {
+      const status = item.currentStock === 0 ? 'CRITICAL - OUT OF STOCK' : 'LOW STOCK';
+      bodyText += `${idx + 1}. [${item.productCode}] ${item.productName}\n`;
+      bodyText += `   Size: ${item.size} | Color: ${item.color}\n`;
+      bodyText += `   Available Stock: ${item.currentStock} units (Threshold: ${item.threshold})\n`;
+      bodyText += `   Status: ${status} | Price: $${item.sellingPrice.toFixed(2)}\n\n`;
+    });
+
+    if (customNotes && customNotes.trim()) {
+      bodyText += `\nADMINISTRATOR NOTES:\n${customNotes.trim()}\n`;
+    }
+
+    bodyText += `\nPlease access the store Inventory IN portal to receive incoming vendor shipments and restock inventory.\n`;
+    bodyText += `Generated by ${storeTitle} POS & Inventory Management System.`;
+
+    const recipientParam = recipients.join(',');
+    const mailtoUrl = `mailto:${recipientParam}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+
+    const nowIso = new Date().toISOString();
+    try {
+      await updateSettings({ LastAlertEmailSent: nowIso });
+    } catch {
+      // ignore
+    }
+
+    showToast(
+      recipients.length > 0
+        ? `Low stock alert email prepared for ${recipients.length} recipient(s)!`
+        : 'Alert email prepared. (Note: Add staff emails in Settings to enable direct recipient delivery)'
+    );
+
+    return {
+      success: true,
+      recipients,
+      subject,
+      body: bodyText,
+      mailtoUrl,
+    };
+  };
+
   return (
     <StoreContext.Provider
       value={{
@@ -1602,6 +1857,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         quotaUpgradeUrl: FIRESTORE_UPGRADE_URL,
         updateLowStockThreshold,
         lowStockItemsList,
+        emailAlertRecipients,
+        sendLowStockEmailAlert,
       }}
     >
       {children}

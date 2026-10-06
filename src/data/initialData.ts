@@ -72,6 +72,8 @@ export const INITIAL_SETTINGS: StoreSettings = {
   TaxRate: 0,
   ActiveRole: 'admin',
   ReceiptFooterMessage: 'Thank you for shopping at Girl Dress Shop! Returns accepted within 14 days.',
+  EmailAlertsEnabled: true,
+  AlertEmailRecipients: 'admin@girldressshop.com',
 };
 
 // Initial system administrator account for first-time access
@@ -82,6 +84,8 @@ export const INITIAL_USERS: AppUser[] = [
     name: 'Store Administrator',
     role: 'admin',
     password: '123',
+    email: 'admin@girldressshop.com',
+    receiveStockAlerts: true,
     phone: '1001',
     status: 'active',
     lastLogin: new Date().toISOString(),

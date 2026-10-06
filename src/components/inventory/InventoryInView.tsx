@@ -54,15 +54,16 @@ export const InventoryInView: React.FC<InventoryInViewProps> = ({
     return getAvailableSizesForCode(productCode);
   }, [productCode, products, getAvailableSizesForCode]);
 
+  const sizesKey = availableSizes.join(',');
   useEffect(() => {
     if (availableSizes.length > 0) {
       if (!size || !availableSizes.includes(size)) {
         setSize(availableSizes[0]);
       }
-    } else {
+    } else if (size) {
       setSize('');
     }
-  }, [productCode, availableSizes]);
+  }, [productCode, sizesKey]);
 
   // Available Colors for selected code and size
   const availableColors = useMemo(() => {
@@ -70,18 +71,19 @@ export const InventoryInView: React.FC<InventoryInViewProps> = ({
     return getAvailableColorsForCodeAndSize(productCode, size);
   }, [productCode, size, products, getAvailableColorsForCodeAndSize]);
 
+  const colorsKey = availableColors.join(',');
   // Section 13: Auto-select color
   useEffect(() => {
     if (availableColors.length === 1) {
-      setColor(availableColors[0]);
+      if (color !== availableColors[0]) setColor(availableColors[0]);
     } else if (availableColors.length > 1) {
       if (!color || !availableColors.includes(color)) {
         setColor(availableColors[0]);
       }
-    } else {
+    } else if (color) {
       setColor('');
     }
-  }, [availableColors]);
+  }, [colorsKey]);
 
   // Auto-load prices and current stock when Variant is resolved
   const currentVariant = useMemo(() => {

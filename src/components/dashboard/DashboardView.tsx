@@ -17,7 +17,10 @@ import {
   Bell,
   BellRing,
   Sliders,
+  Mail,
+  Send,
 } from 'lucide-react';
+import { EmailAlertModal } from '../common/EmailAlertModal';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -44,10 +47,12 @@ export const DashboardView: React.FC<{
     getDressTypeName,
     settings,
     updateLowStockThreshold,
+    emailAlertRecipients,
   } = useStore();
 
   const [chartDays, setChartDays] = useState<7 | 14 | 30>(30);
   const [topSellingRange, setTopSellingRange] = useState<'today' | 'week' | 'month' | 'year'>('month');
+  const [showEmailAlertModal, setShowEmailAlertModal] = useState(false);
 
   // 30-Day Daily Sales Volume & Trends Dataset from Real Orders
   const thirtyDaySalesTrend = useMemo(() => {
@@ -248,17 +253,33 @@ export const DashboardView: React.FC<{
               {settings?.StoreName || 'Girl Dress Shop'}
             </h1>
             {isAdmin && kpis.lowStockCount > 0 && (
-              <a
-                href="#low-stock-alert-section"
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold shadow-2xs hover:bg-rose-100 transition-all animate-pulse"
-                title={`${kpis.lowStockCount} items at or below defined threshold of ${kpis.definedThreshold} units`}
-              >
-                <BellRing className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                <span>Low Stock Alert</span>
-                <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[10px] font-bold font-mono-numbers">
-                  {kpis.lowStockCount}
-                </span>
-              </a>
+              <div className="flex items-center gap-2 flex-wrap">
+                <a
+                  href="#low-stock-alert-section"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold shadow-2xs hover:bg-rose-100 transition-all animate-pulse"
+                  title={`${kpis.lowStockCount} items at or below defined threshold of ${kpis.definedThreshold} units`}
+                >
+                  <BellRing className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Low Stock Alert</span>
+                  <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[10px] font-bold font-mono-numbers">
+                    {kpis.lowStockCount}
+                  </span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailAlertModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+                  title="Send or preview low stock email alert notification"
+                >
+                  <Mail className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Email Alert</span>
+                  {emailAlertRecipients.length > 0 && (
+                    <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px] font-bold font-mono-numbers">
+                      {emailAlertRecipients.length}
+                    </span>
+                  )}
+                </button>
+              </div>
             )}
           </div>
           <p className="text-xs text-stone-500 mt-1">
@@ -370,13 +391,30 @@ export const DashboardView: React.FC<{
               </div>
 
               {/* Action Buttons */}
-              <button
-                onClick={() => setCurrentView('inventory-in')}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
-              >
-                <ArrowDownToLine className="w-3.5 h-3.5" />
-                <span>Restock IN</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEmailAlertModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-300 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                  title="Dispatch or format email notification to authorized staff/admin recipients"
+                >
+                  <Mail className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Send Email Alert</span>
+                  {emailAlertRecipients.length > 0 && (
+                    <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 text-[10px] font-bold rounded-full">
+                      {emailAlertRecipients.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setCurrentView('inventory-in')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  <ArrowDownToLine className="w-3.5 h-3.5" />
+                  <span>Restock IN</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -841,12 +879,28 @@ export const DashboardView: React.FC<{
                 Threshold: ≤{settings?.LowStockThreshold || 5} units
               </span>
             </div>
-            <button
-              onClick={() => setCurrentView('inventory-in')}
-              className="text-xs font-semibold text-rose-700 hover:text-rose-800 cursor-pointer"
-            >
-              Go to Inventory IN →
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowEmailAlertModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                title="Dispatch or format email notification to authorized staff/admin recipients"
+              >
+                <Mail className="w-3.5 h-3.5 text-rose-600" />
+                <span>Email Stock Alert</span>
+                {emailAlertRecipients.length > 0 && (
+                  <span className="px-1.5 py-0.2 bg-rose-200 text-rose-800 text-[10px] font-bold rounded-full">
+                    {emailAlertRecipients.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setCurrentView('inventory-in')}
+                className="text-xs font-semibold text-rose-700 hover:text-rose-800 cursor-pointer"
+              >
+                Go to Inventory IN →
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -904,6 +958,12 @@ export const DashboardView: React.FC<{
           </div>
         </div>
       )}
+
+      {/* Low Stock Email Alert Notification Modal */}
+      <EmailAlertModal
+        isOpen={showEmailAlertModal}
+        onClose={() => setShowEmailAlertModal(false)}
+      />
     </div>
   );
 };

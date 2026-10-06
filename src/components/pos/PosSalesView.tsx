@@ -71,16 +71,17 @@ export const PosSalesView: React.FC = () => {
     return getAvailableSizesForCode(selectedProductCode);
   }, [selectedProductCode, products, getAvailableSizesForCode]);
 
+  const sizesKey = availableSizes.join(',');
   // Auto-select first size if current size is invalid or empty
   useEffect(() => {
     if (availableSizes.length > 0) {
       if (!selectedSize || !availableSizes.includes(selectedSize)) {
         setSelectedSize(availableSizes[0]);
       }
-    } else {
+    } else if (selectedSize) {
       setSelectedSize('');
     }
-  }, [selectedProductCode, availableSizes]);
+  }, [selectedProductCode, sizesKey]);
 
   // Load available colors when size changes
   const availableColors = useMemo(() => {
@@ -88,19 +89,22 @@ export const PosSalesView: React.FC = () => {
     return getAvailableColorsForCodeAndSize(selectedProductCode, selectedSize);
   }, [selectedProductCode, selectedSize, products, getAvailableColorsForCodeAndSize]);
 
+  const colorsKey = availableColors.join(',');
   // Requirement #13: Color auto-selection logic
   useEffect(() => {
     if (availableColors.length === 1) {
       // If only one color is available for the selected size, automatically select that color!
-      setSelectedColor(availableColors[0]);
+      if (selectedColor !== availableColors[0]) {
+        setSelectedColor(availableColors[0]);
+      }
     } else if (availableColors.length > 1) {
       if (!selectedColor || !availableColors.includes(selectedColor)) {
         setSelectedColor(availableColors[0]);
       }
-    } else {
+    } else if (selectedColor) {
       setSelectedColor('');
     }
-  }, [availableColors]);
+  }, [colorsKey]);
 
   // Current matched variant
   const currentVariant = useMemo(() => {

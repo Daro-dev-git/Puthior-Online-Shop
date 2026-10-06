@@ -91,6 +91,8 @@
         "name": { "type": "string", "maxLength": 150 },
         "role": { "type": "string", "enum": ["admin", "sales_staff", "staff"] },
         "password": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 150 },
+        "receiveStockAlerts": { "type": "boolean" },
         "status": { "type": "string", "enum": ["active", "inactive"] }
       },
       "required": ["userId", "userNumber", "name", "role"]
@@ -103,6 +105,9 @@
         "StoreName": { "type": "string", "maxLength": 150 },
         "Tagline": { "type": "string", "maxLength": 200 },
         "Phone": { "type": "string", "maxLength": 50 },
+        "Email": { "type": "string", "maxLength": 150 },
+        "EmailAlertsEnabled": { "type": "boolean" },
+        "AlertEmailRecipients": { "type": "string", "maxLength": 300 },
         "Address": { "type": "string", "maxLength": 300 }
       }
     }

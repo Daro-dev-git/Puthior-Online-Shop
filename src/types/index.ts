@@ -6,6 +6,8 @@ export interface AppUser {
   name: string;
   role: UserRole;
   password: string;
+  email?: string; // Valid email address for notifications and security
+  receiveStockAlerts?: boolean; // Whether user receives low stock email alerts
   phone?: string;
   status: 'active' | 'inactive';
   lastLogin?: string;
@@ -163,6 +165,9 @@ export interface StoreSettings {
   TaxRate: number; // percentage e.g. 0
   ActiveRole: UserRole;
   ReceiptFooterMessage: string;
+  EmailAlertsEnabled?: boolean; // Whether low-stock email alerts are enabled
+  AlertEmailRecipients?: string; // Additional or custom recipient email addresses
+  LastAlertEmailSent?: string; // ISO string of when last email alert was triggered
 }
 
 export interface CartItem {

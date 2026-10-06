@@ -38,15 +38,16 @@ export const InventoryOutView: React.FC = () => {
     return getAvailableSizesForCode(productCode);
   }, [productCode, products, getAvailableSizesForCode]);
 
+  const sizesKey = availableSizes.join(',');
   useEffect(() => {
     if (availableSizes.length > 0) {
       if (!size || !availableSizes.includes(size)) {
         setSize(availableSizes[0]);
       }
-    } else {
+    } else if (size) {
       setSize('');
     }
-  }, [productCode, availableSizes]);
+  }, [productCode, sizesKey]);
 
   // Load available colors
   const availableColors = useMemo(() => {
@@ -54,17 +55,18 @@ export const InventoryOutView: React.FC = () => {
     return getAvailableColorsForCodeAndSize(productCode, size);
   }, [productCode, size, products, getAvailableColorsForCodeAndSize]);
 
+  const colorsKey = availableColors.join(',');
   useEffect(() => {
     if (availableColors.length === 1) {
-      setColor(availableColors[0]);
+      if (color !== availableColors[0]) setColor(availableColors[0]);
     } else if (availableColors.length > 1) {
       if (!color || !availableColors.includes(color)) {
         setColor(availableColors[0]);
       }
-    } else {
+    } else if (color) {
       setColor('');
     }
-  }, [availableColors]);
+  }, [colorsKey]);
 
   // Resolve Variant
   const currentVariant = useMemo(() => {

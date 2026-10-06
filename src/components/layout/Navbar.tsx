@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   ArrowRight,
   ArrowDownToLine,
+  Mail,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -224,16 +225,27 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
                     )}
                   </div>
 
-                  <div className="p-2.5 bg-stone-50 border-t border-stone-100 text-center">
+                  <div className="p-2.5 bg-stone-50 border-t border-stone-100 flex items-center justify-between text-xs gap-2">
                     <button
                       onClick={() => {
                         setShowNotifications(false);
                         setCurrentView('dashboard');
                         window.location.hash = 'low-stock-alert-section';
                       }}
-                      className="text-xs font-semibold text-stone-700 hover:text-stone-900 inline-flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] font-semibold text-rose-700 hover:text-rose-800 inline-flex items-center gap-1 cursor-pointer"
                     >
-                      <span>View full alert details on Dashboard</span>
+                      <Mail className="w-3 h-3 text-rose-600" />
+                      <span>Send Email Alert</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowNotifications(false);
+                        setCurrentView('dashboard');
+                        window.location.hash = 'low-stock-alert-section';
+                      }}
+                      className="text-[11px] font-semibold text-stone-700 hover:text-stone-900 inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Full Alert Details</span>
                       <ArrowRight className="w-3 h-3" />
                     </button>
                   </div>

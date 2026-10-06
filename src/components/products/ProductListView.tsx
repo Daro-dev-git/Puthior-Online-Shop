@@ -12,6 +12,8 @@ import {
   ArrowDownToLine,
   ShoppingCart,
   Sparkles,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 interface ProductListViewProps {
@@ -37,6 +39,8 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
   const [selectedStockFilter, setSelectedStockFilter] = useState<'all' | 'in_stock' | 'low_stock' | 'out_of_stock'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [productToDelete, setProductToDelete] = useState<{ id: string; code: string; name: string } | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(50);
 
   // Filtered Products
   const filteredProducts = useMemo(() => {
@@ -88,6 +92,17 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
     });
   }, [products, searchQuery, selectedType, selectedPriceCat, selectedStockFilter, priceCategories, getDressTypeName]);
 
+  // Reset to page 1 on filter or search changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedType, selectedPriceCat, selectedStockFilter]);
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredProducts.slice(start, start + itemsPerPage);
+  }, [filteredProducts, currentPage, itemsPerPage]);
+
   const handlePromptDelete = (productId: string, code: string, name: string) => {
     setProductToDelete({ id: productId, code, name });
   };
@@ -103,9 +118,14 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-200">
         <div>
-          <h1 className="text-2xl font-bold font-display text-stone-900 tracking-tight">
-            Girl Dress Products & Master Catalog
-          </h1>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold font-display text-stone-900 tracking-tight">
+              Girl Dress Products & Master Catalog
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+              {products.length} Products Total
+            </span>
+          </div>
           <p className="text-xs text-stone-500 mt-0.5">
             Manage multi-variant dresses, size matrices, and pricing
           </p>
@@ -270,7 +290,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
         </div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filteredProducts.map((product) => {
+          {paginatedProducts.map((product) => {
             const dressTypeName = getDressTypeName(product.DressTypeID);
             const totalStock = product.Variants.reduce((s, v) => s + v.CurrentStock, 0);
             const minPrice = Math.min(...product.Variants.map((v) => v.SellingPrice));
@@ -424,7 +444,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
-                {filteredProducts.map((p) => {
+                {paginatedProducts.map((p) => {
                   const typeName = getDressTypeName(p.DressTypeID);
                   const totalStock = p.Variants.reduce((s, v) => s + v.CurrentStock, 0);
                   const minPrice = Math.min(...p.Variants.map((v) => v.SellingPrice));
@@ -504,6 +524,84 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {filteredProducts.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-stone-200 text-xs">
+          <div className="flex items-center gap-3 text-stone-500 flex-wrap">
+            <span>
+              Showing <strong className="text-stone-800 font-semibold">{Math.min(filteredProducts.length, (currentPage - 1) * itemsPerPage + 1)}</strong> to{' '}
+              <strong className="text-stone-800 font-semibold">{Math.min(filteredProducts.length, currentPage * itemsPerPage)}</strong> of{' '}
+              <strong className="text-stone-800 font-semibold">{filteredProducts.length}</strong> products
+            </span>
+
+            <div className="flex items-center gap-1.5 ml-2">
+              <span className="text-stone-400">Show per page:</span>
+              {[20, 50, 100].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => {
+                    setItemsPerPage(num);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                    itemsPerPage === num
+                      ? 'bg-rose-600 text-white font-bold shadow-2xs'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }).map((_, i) => {
+                  const pageNum = i + 1;
+                  return (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center cursor-pointer transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'bg-white border border-stone-200 text-stone-700 hover:bg-stone-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 

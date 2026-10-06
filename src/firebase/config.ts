@@ -1,5 +1,13 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  doc,
+  getDocFromServer,
+  Firestore,
+} from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -34,8 +42,22 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 
-// CRITICAL: getFirestore must pass firestoreDatabaseId as required by the integration
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// CRITICAL: Initialize Firestore with IndexedDB local cache persistence and firestoreDatabaseId
+let firestoreDb: Firestore;
+try {
+  firestoreDb = initializeFirestore(
+    app,
+    {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    },
+    firebaseConfig.firestoreDatabaseId
+  );
+} catch {
+  firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+}
+export const db = firestoreDb;
 
 export const FIRESTORE_UPGRADE_URL = `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${firebaseConfig.firestoreDatabaseId}/data?openUpgradeDialog=true`;
 
@@ -75,19 +97,39 @@ export function setFirestoreQuotaExceeded(exceeded: boolean, message?: string) {
 }
 
 export function isQuotaExceededError(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error);
+  if (!error) return false;
+  const anyErr = error as { code?: string; message?: string };
+  const code = typeof anyErr?.code === 'string' ? anyErr.code : '';
+  const message = typeof anyErr?.message === 'string' ? anyErr.message : '';
+  const str = String(error);
+  const combined = `${code} ${message} ${str}`.toLowerCase();
   return (
-    msg.includes('Quota exceeded') ||
-    msg.includes('Quota limit exceeded') ||
-    msg.includes('resource-exhausted') ||
-    msg.includes('Free daily read units per project')
+    code.includes('resource-exhausted') ||
+    combined.includes('quota exceeded') ||
+    combined.includes('quota limit exceeded') ||
+    combined.includes('resource-exhausted') ||
+    combined.includes('free daily read units') ||
+    combined.includes('free tier database') ||
+    combined.includes('quota metric') ||
+    combined.includes('exceed free quota limits') ||
+    combined.includes('retry after quota limits are reset')
   );
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  if (isQuotaExceededError(error)) {
+    const errorMsg = (error as { message?: string })?.message || String(error);
+    setFirestoreQuotaExceeded(true, errorMsg);
+    console.warn(
+      'Firestore Free Tier Daily Quota Exceeded (Free daily read units per project limit reached). Operating seamlessly with cached and local data.',
+      FIRESTORE_UPGRADE_URL
+    );
+    throw new Error('Firestore daily free quota limit reached. Database is operating in cached/offline mode.');
+  }
+
   const currentAuth = auth.currentUser;
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: (error as { message?: string })?.message || String(error),
     operationType,
     path,
     authInfo: {
@@ -104,20 +146,24 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   };
 
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-
-  if (isQuotaExceededError(error)) {
-    setFirestoreQuotaExceeded(true, errInfo.error);
-  }
-
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test connection on boot as mandated by the skill
+// Test connection on boot as mandated by the skill (cached per session to save reads)
 async function testConnection() {
+  if (typeof window !== 'undefined' && sessionStorage.getItem('gds_connection_verified')) {
+    return;
+  }
   try {
     await getDocFromServer(doc(db, 'settings', 'connection_test'));
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('gds_connection_verified', 'true');
+    }
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
+    if (isQuotaExceededError(error)) {
+      setFirestoreQuotaExceeded(true, error instanceof Error ? error.message : String(error));
+      console.warn('Firebase quota limit detected during connection check. Operating in offline/cached mode.');
+    } else if (error instanceof Error && error.message.includes('the client is offline')) {
       console.warn('Firebase client is offline, using cache where available.');
     }
   }
