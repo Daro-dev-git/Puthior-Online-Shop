@@ -10,6 +10,9 @@ import {
   query,
   limit,
   orderBy,
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData,
   getDocsFromCache,
   getDocFromCache,
 } from 'firebase/firestore';
@@ -205,6 +208,51 @@ export function subscribeProducts(
       }
     }
   );
+}
+
+/**
+ * Fetches products in small batches (e.g., 20 items) with strict cache prioritization
+ * to minimize read units and support pagination across large product catalogs.
+ */
+export async function fetchProductsBatch(
+  batchSize: number = 20,
+  lastDoc?: QueryDocumentSnapshot<DocumentData>
+): Promise<{ products: Product[]; lastVisible: QueryDocumentSnapshot<DocumentData> | null }> {
+  const colRef = collection(db, COLLECTIONS.PRODUCTS);
+  const q = lastDoc
+    ? query(colRef, orderBy('ProductCode', 'asc'), startAfter(lastDoc), limit(batchSize))
+    : query(colRef, orderBy('ProductCode', 'asc'), limit(batchSize));
+
+  // 1. Try local cache first
+  try {
+    const cacheSnap = await getDocsFromCache(q);
+    if (!cacheSnap.empty) {
+      const products: Product[] = [];
+      cacheSnap.forEach((d) => products.push(d.data() as Product));
+      const lastVisible = cacheSnap.docs[cacheSnap.docs.length - 1] || null;
+      return { products, lastVisible };
+    }
+  } catch {
+    // Cache miss or index not yet established in cache
+  }
+
+  // 2. Fallback to server if cache missed and quota not exceeded
+  if (getFirestoreQuotaStatus().isExceeded) {
+    return { products: [], lastVisible: null };
+  }
+
+  try {
+    const snap = await getDocs(q);
+    const products: Product[] = [];
+    snap.forEach((d) => products.push(d.data() as Product));
+    const lastVisible = snap.docs[snap.docs.length - 1] || null;
+    return { products, lastVisible };
+  } catch (err) {
+    if (isQuotaExceededError(err)) {
+      setFirestoreQuotaExceeded(true, (err as { message?: string })?.message || String(err));
+    }
+    return { products: [], lastVisible: null };
+  }
 }
 
 /**

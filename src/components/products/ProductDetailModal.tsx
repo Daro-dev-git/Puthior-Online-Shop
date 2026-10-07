@@ -4,6 +4,7 @@ import { Product, ProductVariant, ProductImage } from '../../types';
 import { processLocalImageFile } from '../../utils/imageUtils';
 import { VariantEditModal } from './VariantEditModal';
 import { AddVariantModal } from './AddVariantModal';
+import { EditProductModal } from './EditProductModal';
 import {
   X,
   Shirt,
@@ -38,6 +39,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
   const [isAttachingLocal, setIsAttachingLocal] = useState(false);
   const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null);
   const [showAddVariant, setShowAddVariant] = useState(false);
+  const [showEditProductModal, setShowEditProductModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!product) return null;
@@ -166,9 +168,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={() => setShowEditProductModal(true)}
+                className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Edit Product Code, Name, Category, Brand, Description"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit Product</span>
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -590,6 +604,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
           productId={product.ProductID}
           productCode={product.ProductCode}
           onClose={() => setShowAddVariant(false)}
+        />
+      )}
+
+      {/* Edit Product General Info Modal */}
+      {showEditProductModal && (
+        <EditProductModal
+          productId={product.ProductID}
+          onClose={() => setShowEditProductModal(false)}
         />
       )}
     </div>

@@ -45,6 +45,7 @@ export const PosSalesView: React.FC = () => {
   const [cart, setCart] = useState<
     {
       variantId: string;
+      productId: string;
       productCode: string;
       productName: string;
       size: string;
@@ -159,6 +160,7 @@ export const PosSalesView: React.FC = () => {
         ...prev,
         {
           variantId: currentVariant.VariantID,
+          productId: currentProduct.ProductID,
           productCode: currentProduct.ProductCode,
           productName: currentProduct.ProductName,
           size: currentVariant.Size,
@@ -215,7 +217,7 @@ export const PosSalesView: React.FC = () => {
 
     const payloadItems = cart.map((i) => ({
       VariantID: i.variantId,
-      ProductID: '',
+      ProductID: i.productId,
       ProductCode: i.productCode,
       ProductName: i.productName,
       DressTypeName: '',

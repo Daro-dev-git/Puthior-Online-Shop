@@ -808,15 +808,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return { success: false, error: `Another product already uses code "${cleanCode}". SKU must be unique.` };
     }
 
+    // Synchronize variant product codes if product code changed
+    const updatedVariants = (product.Variants || []).map((v) => ({
+      ...v,
+      ProductCode: cleanCode,
+    }));
+
     const updated: Product = {
       ...product,
       ProductCode: cleanCode,
+      Variants: updatedVariants,
       ModifiedDate: new Date().toISOString(),
     };
 
-    setProducts((prev) => prev.map((p) => (p.ProductID === product.ProductID ? updated : p)));
+    setProducts((prev) => {
+      const next = prev.map((p) => (p.ProductID === product.ProductID ? updated : p));
+      try {
+        localStorage.setItem('gds_cached_products', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     saveProductToFirestore(updated).catch(console.error);
-    showToast(`Product "${product.ProductName}" updated.`);
+    showToast(`Product "${product.ProductName}" (${cleanCode}) updated.`);
     return { success: true };
   };
 
@@ -1329,15 +1342,33 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const newTxList: InventoryTransaction[] = [];
 
     items.forEach((item) => {
-      const pIndex = updatedProducts.findIndex((p) => p.ProductID === item.ProductID);
+      // Robust lookup: match by ProductID, or by ProductCode, or by variant containing item.VariantID
+      let pIndex = updatedProducts.findIndex((p) => Boolean(item.ProductID) && p.ProductID === item.ProductID);
+      if (pIndex < 0) {
+        pIndex = updatedProducts.findIndex(
+          (p) =>
+            (Boolean(item.ProductCode) && p.ProductCode.trim().toUpperCase() === item.ProductCode.trim().toUpperCase()) ||
+            p.Variants.some((v) => v.VariantID === item.VariantID)
+        );
+      }
+
       if (pIndex >= 0) {
         const prod = updatedProducts[pIndex];
-        const vIndex = prod.Variants.findIndex((v) => v.VariantID === item.VariantID);
+        let vIndex = prod.Variants.findIndex((v) => v.VariantID === item.VariantID);
+        if (vIndex < 0) {
+          vIndex = prod.Variants.findIndex(
+            (v) =>
+              v.Size.trim().toLowerCase() === item.Size.trim().toLowerCase() &&
+              v.Color.trim().toLowerCase() === item.Color.trim().toLowerCase()
+          );
+        }
+
         if (vIndex >= 0) {
           const v = prod.Variants[vIndex];
+          const newStock = Math.max(0, v.CurrentStock - item.Quantity);
           const updatedVar = {
             ...v,
-            CurrentStock: Math.max(0, v.CurrentStock - item.Quantity),
+            CurrentStock: newStock,
           };
           const updatedVarList = [...prod.Variants];
           updatedVarList[vIndex] = updatedVar;
@@ -1377,8 +1408,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
 
     setProducts(updatedProducts);
-    setTransactions((prev) => [...newTxList, ...prev]);
-    setOrders((prev) => [newOrder, ...prev]);
+    try {
+      localStorage.setItem('gds_cached_products', JSON.stringify(updatedProducts));
+    } catch {}
+
+    setTransactions((prev) => {
+      const nextTx = [...newTxList, ...prev];
+      try {
+        localStorage.setItem('gds_cached_transactions', JSON.stringify(nextTx));
+      } catch {}
+      return nextTx;
+    });
+
+    setOrders((prev) => {
+      const nextOrders = [newOrder, ...prev];
+      try {
+        localStorage.setItem('gds_cached_orders', JSON.stringify(nextOrders));
+      } catch {}
+      return nextOrders;
+    });
     saveOrderToFirestore(newOrder).catch(console.error);
 
     // Update customer spend if registered

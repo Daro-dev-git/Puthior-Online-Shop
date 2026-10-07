@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
+import { EditProductModal } from './EditProductModal';
 import {
   Search,
   Plus,
@@ -8,6 +9,7 @@ import {
   List,
   Shirt,
   Eye,
+  Edit2,
   Trash2,
   ArrowDownToLine,
   ShoppingCart,
@@ -39,8 +41,9 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
   const [selectedStockFilter, setSelectedStockFilter] = useState<'all' | 'in_stock' | 'low_stock' | 'out_of_stock'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [productToDelete, setProductToDelete] = useState<{ id: string; code: string; name: string } | null>(null);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [itemsPerPage, setItemsPerPage] = useState<number>(50);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(20);
 
   // Filtered Products
   const filteredProducts = useMemo(() => {
@@ -411,6 +414,16 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
 
                     {isAdmin && (
                       <button
+                        onClick={() => setEditingProductId(product.ProductID)}
+                        title="Edit Product Info (Code, Name, Category)"
+                        className="p-1.5 text-stone-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {isAdmin && (
+                      <button
                         onClick={() => handlePromptDelete(product.ProductID, product.ProductCode, product.ProductName)}
                         title="Delete Product"
                         className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
@@ -506,6 +519,16 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                           >
                             <ArrowDownToLine className="w-4 h-4" />
                           </button>
+
+                          {isAdmin && (
+                            <button
+                              onClick={() => setEditingProductId(p.ProductID)}
+                              className="p-1.5 text-stone-500 hover:text-rose-600 hover:bg-stone-100 rounded cursor-pointer"
+                              title="Edit Product Info (Code, Name, Category)"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
 
                           {isAdmin && (
                             <button
@@ -646,6 +669,14 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Product Modal */}
+      {editingProductId && (
+        <EditProductModal
+          productId={editingProductId}
+          onClose={() => setEditingProductId(null)}
+        />
       )}
     </div>
   );
