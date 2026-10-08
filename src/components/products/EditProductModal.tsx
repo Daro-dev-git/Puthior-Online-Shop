@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
-import { Product, ProductImage } from '../../types';
+import { Product, ProductImage, ProductVariant } from '../../types';
 import { processLocalImageFile } from '../../utils/imageUtils';
+import { compareSizes } from '../../utils/sizeUtils';
 import {
   X,
   Save,
@@ -10,11 +11,14 @@ import {
   CheckCircle2,
   Trash2,
   Plus,
+  Minus,
   Loader2,
   AlertCircle,
   Shirt,
   Layers,
   Sparkles,
+  ArrowUpDown,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 interface EditProductModalProps {
@@ -23,7 +27,7 @@ interface EditProductModalProps {
 }
 
 export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, onClose }) => {
-  const { products, dressTypes, updateProduct, showToast } = useStore();
+  const { products, dressTypes, updateProduct, showToast, isAdmin } = useStore();
   const product = products.find((p) => p.ProductID === productId);
 
   // Form states
@@ -34,8 +38,24 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
   const [description, setDescription] = useState(product?.Description || '');
   const [images, setImages] = useState<ProductImage[]>(product?.Images ? [...product.Images] : []);
 
-  // Variant editing (prices)
-  const [variants, setVariants] = useState(product?.Variants ? [...product.Variants] : []);
+  // Variant editing (prices, quantities, stock thresholds)
+  const [variants, setVariants] = useState<ProductVariant[]>(() =>
+    product?.Variants ? product.Variants.map((v) => ({ ...v })) : []
+  );
+
+  // Keep reference of original variants to display stock adjustment deltas
+  const originalVariants = useMemo(() => {
+    const map = new Map<string, ProductVariant>();
+    if (product?.Variants) {
+      product.Variants.forEach((v) => map.set(v.VariantID, { ...v }));
+    }
+    return map;
+  }, [product]);
+
+  // Bulk adjustment drawer / tools
+  const [bulkCost, setBulkCost] = useState<string>('');
+  const [bulkSelling, setBulkSelling] = useState<string>('');
+  const [showBulkTools, setShowBulkTools] = useState<boolean>(false);
 
   // Adding new image states
   const [showAddUrlImage, setShowAddUrlImage] = useState(false);
@@ -125,11 +145,58 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
     });
   };
 
-  const handleVariantPriceChange = (variantId: string, field: 'SellingPrice' | 'ActualPrice', val: number) => {
+  // Multi-item individual variant field change (Cost, Selling, Quantity, Min Alert)
+  const handleVariantFieldChange = (
+    variantId: string,
+    field: 'SellingPrice' | 'ActualPrice' | 'CurrentStock' | 'MinimumStock',
+    val: number
+  ) => {
     setVariants((prev) =>
       prev.map((v) => (v.VariantID === variantId ? { ...v, [field]: Math.max(0, val) } : v))
     );
   };
+
+  // Bulk actions across all variants
+  const handleApplyBulkCost = () => {
+    const num = parseFloat(bulkCost);
+    if (isNaN(num) || num < 0) {
+      showToast('Please enter a valid positive cost price', 'error');
+      return;
+    }
+    setVariants((prev) => prev.map((v) => ({ ...v, ActualPrice: num })));
+    showToast(`Applied wholesale cost of $${num.toFixed(2)} to all ${variants.length} variants`);
+    setBulkCost('');
+  };
+
+  const handleApplyBulkSelling = () => {
+    const num = parseFloat(bulkSelling);
+    if (isNaN(num) || num < 0) {
+      showToast('Please enter a valid positive selling price', 'error');
+      return;
+    }
+    setVariants((prev) => prev.map((v) => ({ ...v, SellingPrice: num })));
+    showToast(`Applied retail selling price of $${num.toFixed(2)} to all ${variants.length} variants`);
+    setBulkSelling('');
+  };
+
+  const handleBulkStockDelta = (delta: number) => {
+    setVariants((prev) =>
+      prev.map((v) => ({
+        ...v,
+        CurrentStock: Math.max(0, v.CurrentStock + delta),
+      }))
+    );
+    showToast(`${delta > 0 ? `Added +${delta}` : `Deducted ${delta}`} unit(s) across all variants`);
+  };
+
+  // Calculate total stock change for visual feedback
+  const totalStockDelta = useMemo(() => {
+    return variants.reduce((acc, v) => {
+      const orig = originalVariants.get(v.VariantID);
+      const diff = v.CurrentStock - (orig?.CurrentStock || 0);
+      return acc + diff;
+    }, 0);
+  }, [variants, originalVariants]);
 
   // Submit Update
   const handleSubmit = (e: React.FormEvent) => {
@@ -160,10 +227,14 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
 
     setIsSaving(true);
 
-    // Synchronize variant product codes if product code changed
+    // Synchronize variant product codes and sanitize prices/quantities
     const updatedVariants = variants.map((v) => ({
       ...v,
       ProductCode: cleanCode,
+      ActualPrice: Number(v.ActualPrice) >= 0 ? Number(v.ActualPrice) : 0,
+      SellingPrice: Number(v.SellingPrice) >= 0 ? Number(v.SellingPrice) : 0,
+      CurrentStock: Math.max(0, Number(v.CurrentStock) || 0),
+      MinimumStock: Math.max(0, Number(v.MinimumStock) || 0),
     }));
 
     const updatedProduct: Product = {
@@ -446,73 +517,277 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
             )}
           </div>
 
-          {/* Variants Quick Overview */}
-          <div className="space-y-2 pt-2 border-t border-stone-100">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-rose-600" />
-                <span>Existing Variants ({variants.length} items)</span>
-              </h3>
-              <span className="text-[11px] text-stone-500 font-mono-numbers">
-                Total Stock: {variants.reduce((s, v) => s + v.CurrentStock, 0)} units
-              </span>
+          {/* Variants Quick Overview & Multi-Item Adjustment */}
+          <div className="space-y-3 pt-3 border-t border-stone-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-rose-600" />
+                  <span>Adjust Variants: Cost, Selling Price & Stock ({variants.length} items)</span>
+                </h3>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Simultaneously adjust wholesale cost, selling prices, and stock quantities with automated inventory deductions
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {totalStockDelta !== 0 && (
+                  <span
+                    className={`px-2 py-0.5 rounded text-[11px] font-mono-numbers font-bold ${
+                      totalStockDelta > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                    }`}
+                  >
+                    Net Stock: {totalStockDelta > 0 ? `+${totalStockDelta}` : totalStockDelta} units
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowBulkTools(!showBulkTools)}
+                  className="px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>{showBulkTools ? 'Hide Bulk Tools' : 'Bulk Adjust Tools'}</span>
+                </button>
+              </div>
             </div>
 
-            <div className="max-h-48 overflow-y-auto rounded-xl border border-stone-200 overflow-hidden">
+            {/* Bulk Adjustment Toolbar */}
+            {showBulkTools && (
+              <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2.5 animate-fadeIn text-xs">
+                <div className="flex items-center justify-between text-[11px] font-bold text-stone-700">
+                  <span>Bulk Apply to All Variants</span>
+                  <span className="text-[10px] text-stone-400 font-normal">Apply values in one click across all sizes/colors</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-stone-600 font-medium">Cost $:</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="e.g. 18.00"
+                      value={bulkCost}
+                      onChange={(e) => setBulkCost(e.target.value)}
+                      className="w-24 px-2 py-1 bg-white border border-stone-300 rounded text-xs font-mono-numbers"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkCost}
+                      className="px-2 py-1 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded font-semibold text-[11px] cursor-pointer"
+                    >
+                      Apply
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-stone-600 font-medium">Sell $:</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="e.g. 38.00"
+                      value={bulkSelling}
+                      onChange={(e) => setBulkSelling(e.target.value)}
+                      className="w-24 px-2 py-1 bg-white border border-stone-300 rounded text-xs font-mono-numbers"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkSelling}
+                      className="px-2 py-1 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded font-semibold text-[11px] cursor-pointer"
+                    >
+                      Apply
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-stone-600 font-medium">Stock:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkStockDelta(-1)}
+                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded font-semibold text-[11px] cursor-pointer"
+                    >
+                      -1 All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkStockDelta(1)}
+                      className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-semibold text-[11px] cursor-pointer"
+                    >
+                      +1 All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkStockDelta(5)}
+                      className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-semibold text-[11px] cursor-pointer"
+                    >
+                      +5 All
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Variants Multi-Item Table */}
+            <div className="max-h-60 overflow-y-auto rounded-xl border border-stone-200 overflow-hidden shadow-2xs">
               <table className="w-full text-xs text-left">
-                <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold sticky top-0">
+                <thead className="bg-stone-50 border-b border-stone-200 text-stone-600 font-semibold sticky top-0 z-10">
                   <tr>
-                    <th className="py-2 px-3">Size</th>
-                    <th className="py-2 px-3">Color</th>
-                    <th className="py-2 px-3 text-center">Current Stock</th>
-                    <th className="py-2 px-3">Cost ($)</th>
-                    <th className="py-2 px-3">Selling Price ($)</th>
+                    <th className="py-2.5 px-3">Size (Order by #)</th>
+                    <th className="py-2.5 px-3">Color</th>
+                    <th className="py-2.5 px-3 text-center">Stock (Qty)</th>
+                    <th className="py-2.5 px-3">Cost Basis ($)</th>
+                    <th className="py-2.5 px-3">Selling Price ($)</th>
+                    <th className="py-2.5 px-3 text-right">Unit Margin</th>
+                    <th className="py-2.5 px-3 text-center">Min Alert</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {variants.map((v) => (
-                    <tr key={v.VariantID} className="hover:bg-stone-50">
-                      <td className="py-2 px-3 font-semibold text-stone-900">{v.Size}</td>
-                      <td className="py-2 px-3 text-stone-700">{v.Color}</td>
-                      <td className="py-2 px-3 text-center font-mono-numbers">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                            v.CurrentStock === 0
-                              ? 'bg-rose-100 text-rose-700'
-                              : v.CurrentStock <= 5
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}
-                        >
-                          {v.CurrentStock}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={v.ActualPrice}
-                          onChange={(e) =>
-                            handleVariantPriceChange(v.VariantID, 'ActualPrice', parseFloat(e.target.value) || 0)
-                          }
-                          className="w-20 px-2 py-1 bg-white border border-stone-200 rounded text-xs text-stone-700 focus:ring-1 focus:ring-rose-500 font-mono-numbers"
-                        />
-                      </td>
-                      <td className="py-2 px-3">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={v.SellingPrice}
-                          onChange={(e) =>
-                            handleVariantPriceChange(v.VariantID, 'SellingPrice', parseFloat(e.target.value) || 0)
-                          }
-                          className="w-20 px-2 py-1 bg-white border border-stone-200 rounded text-xs font-bold text-rose-700 focus:ring-1 focus:ring-rose-500 font-mono-numbers"
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-stone-100 bg-white">
+                  {[...variants]
+                    .sort((a, b) => {
+                      const sizeDiff = compareSizes(a.Size, b.Size);
+                      if (sizeDiff !== 0) return sizeDiff;
+                      return a.Color.localeCompare(b.Color);
+                    })
+                    .map((v) => {
+                      const orig = originalVariants.get(v.VariantID);
+                      const origStock = orig ? orig.CurrentStock : v.CurrentStock;
+                      const stockDiff = v.CurrentStock - origStock;
+                      const profit = v.SellingPrice - v.ActualPrice;
+                      const marginPct = v.ActualPrice > 0 ? (profit / v.ActualPrice) * 100 : 0;
+
+                      return (
+                        <tr key={v.VariantID} className="hover:bg-rose-50/30 transition-colors">
+                          <td className="py-2 px-3 font-semibold text-stone-900 font-mono-numbers">
+                            <span className="px-1.5 py-0.5 rounded bg-stone-100 border border-stone-200">
+                              {v.Size}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-stone-700 font-medium">{v.Color}</td>
+
+                          {/* Editable Stock Quantity with Quick Increment / Decrement */}
+                          <td className="py-2 px-3 text-center">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleVariantFieldChange(v.VariantID, 'CurrentStock', Math.max(0, v.CurrentStock - 1))
+                                }
+                                className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center cursor-pointer text-xs"
+                                title="Deduct 1 unit"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                value={v.CurrentStock}
+                                onChange={(e) =>
+                                  handleVariantFieldChange(
+                                    v.VariantID,
+                                    'CurrentStock',
+                                    Math.max(0, parseInt(e.target.value, 10) || 0)
+                                  )
+                                }
+                                className="w-14 px-1.5 py-1 text-center bg-stone-50 border border-stone-200 rounded font-mono-numbers font-bold text-xs focus:bg-white focus:ring-1 focus:ring-rose-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleVariantFieldChange(v.VariantID, 'CurrentStock', v.CurrentStock + 1)
+                                }
+                                className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center cursor-pointer text-xs"
+                                title="Add 1 unit"
+                              >
+                                +
+                              </button>
+
+                              {/* Delta visual indicator */}
+                              {stockDiff !== 0 && (
+                                <span
+                                  className={`px-1 py-0.2 rounded text-[10px] font-mono-numbers font-bold ${
+                                    stockDiff > 0
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                  }`}
+                                  title={`Original was ${origStock} units`}
+                                >
+                                  {stockDiff > 0 ? `+${stockDiff}` : stockDiff}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Editable Cost Price (ActualPrice) */}
+                          <td className="py-2 px-3">
+                            <div className="relative">
+                              <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-stone-400 text-[11px]">$</span>
+                              <input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                value={v.ActualPrice}
+                                onChange={(e) =>
+                                  handleVariantFieldChange(
+                                    v.VariantID,
+                                    'ActualPrice',
+                                    Math.max(0, parseFloat(e.target.value) || 0)
+                                  )
+                                }
+                                className="w-22 pl-5 pr-1.5 py-1 bg-stone-50 border border-stone-200 rounded text-xs text-stone-700 focus:bg-white focus:ring-1 focus:ring-rose-500 font-mono-numbers"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Editable Selling Price (SellingPrice) */}
+                          <td className="py-2 px-3">
+                            <div className="relative">
+                              <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-rose-400 text-[11px]">$</span>
+                              <input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                value={v.SellingPrice}
+                                onChange={(e) =>
+                                  handleVariantFieldChange(
+                                    v.VariantID,
+                                    'SellingPrice',
+                                    Math.max(0, parseFloat(e.target.value) || 0)
+                                  )
+                                }
+                                className="w-22 pl-5 pr-1.5 py-1 bg-stone-50 border border-stone-200 rounded text-xs font-bold text-rose-700 focus:bg-white focus:ring-1 focus:ring-rose-500 font-mono-numbers"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Real-time Profit Preview */}
+                          <td className="py-2 px-3 text-right font-mono-numbers">
+                            <span className="text-emerald-700 font-semibold text-[11px]">
+                              +${profit.toFixed(2)}
+                            </span>
+                            <span className="text-stone-400 text-[10px] ml-1">
+                              ({marginPct.toFixed(0)}%)
+                            </span>
+                          </td>
+
+                          {/* Editable Minimum Stock Alert */}
+                          <td className="py-2 px-3 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              value={v.MinimumStock}
+                              onChange={(e) =>
+                                handleVariantFieldChange(
+                                  v.VariantID,
+                                  'MinimumStock',
+                                  Math.max(0, parseInt(e.target.value, 10) || 0)
+                                )
+                              }
+                              className="w-12 px-1 py-1 text-center bg-stone-50 border border-stone-200 rounded text-xs text-stone-600 focus:bg-white font-mono-numbers"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>

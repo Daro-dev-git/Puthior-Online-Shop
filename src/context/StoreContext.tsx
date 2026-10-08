@@ -16,6 +16,7 @@ import {
   UserRole,
   AppUser,
 } from '../types';
+import { compareSizes } from '../utils/sizeUtils';
 import {
   INITIAL_PRODUCTS,
   INITIAL_DRESS_TYPES,
@@ -40,7 +41,9 @@ import {
   saveProductToFirestore,
   deleteProductFromFirestore,
   saveOrderToFirestore,
+  deleteOrderFromFirestore,
   saveTransactionToFirestore,
+  deleteTransactionFromFirestore,
   saveCustomerToFirestore,
   saveDressTypeToFirestore,
   deleteDressTypeFromFirestore,
@@ -148,7 +151,14 @@ interface StoreContextType {
   deleteProduct: (productId: string) => void;
 
   // Variant & Stock Adjustments (Admin)
-  updateVariant: (productId: string, variant: ProductVariant) => { success: boolean; error?: string };
+  updateVariant: (
+    productId: string,
+    variant: ProductVariant,
+    stockAdjustment?: {
+      newStock: number;
+      reason?: string;
+    }
+  ) => { success: boolean; error?: string };
   adjustVariantStock: (productId: string, variantId: string, newStock: number, reason: string) => { success: boolean; error?: string };
   addVariantToProduct: (productId: string, variant: Omit<ProductVariant, 'VariantID' | 'ProductID' | 'ProductCode'>) => { success: boolean; error?: string };
   deleteVariantFromProduct: (productId: string, variantId: string) => { success: boolean; error?: string };
@@ -156,6 +166,12 @@ interface StoreContextType {
   receiveStock: (args: ReceiveStockArgs) => { success: boolean; error?: string };
   issueStock: (args: IssueStockArgs) => { success: boolean; error?: string };
   completeSale: (args: CompleteSaleArgs) => { success: boolean; order?: Order; error?: string };
+
+  // Orders & Transactions Management (Admin editable with auto-deduct / real-time stock sync)
+  updateOrder: (updatedOrder: Order) => { success: boolean; error?: string };
+  deleteOrder: (orderId: string, restoreStock?: boolean) => { success: boolean; error?: string };
+  updateTransaction: (updatedTx: InventoryTransaction) => { success: boolean; error?: string };
+  deleteTransaction: (transactionId: string) => { success: boolean; error?: string };
 
   // Masters Management
   addDressType: (type: Omit<DressType, 'DressTypeID'>) => void;
@@ -265,9 +281,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [sizes, setSizes] = useState<SizeItem[]>(() => {
     try {
       const cached = localStorage.getItem('gds_cached_sizes');
-      return cached ? JSON.parse(cached) : INITIAL_SIZES;
+      const base: SizeItem[] = cached ? JSON.parse(cached) : INITIAL_SIZES;
+      return [...base].sort((a, b) => compareSizes(a.SizeValue, b.SizeValue));
     } catch {
-      return INITIAL_SIZES;
+      return [...INITIAL_SIZES].sort((a, b) => compareSizes(a.SizeValue, b.SizeValue));
     }
   });
   const [colors, setColors] = useState<ColorItem[]>(() => {
@@ -370,7 +387,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     loadStaticCollectionCacheFirst<SizeItem>('sizes', 'gds_cached_sizes', INITIAL_SIZES)
       .then((list) => {
         if (list && list.length > 0) {
-          setSizes((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list));
+          const sortedList = [...list].sort((a, b) => compareSizes(a.SizeValue, b.SizeValue));
+          setSizes((prev) => (JSON.stringify(prev) === JSON.stringify(sortedList) ? prev : sortedList));
         }
       })
       .catch(() => {});
@@ -406,13 +424,32 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       subscribeProducts((list) => {
         if (list.length > 0) {
           setProducts((prev) => {
-            if (prev.length === list.length && JSON.stringify(prev) === JSON.stringify(list)) {
+            // Protect against Firestore snapshot rolling back recently updated products with newer local timestamp
+            const merged = [...prev];
+            list.forEach((incoming) => {
+              const idx = merged.findIndex((p) => p.ProductID === incoming.ProductID);
+              if (idx >= 0) {
+                const current = merged[idx];
+                // Only replace if incoming from Firestore is newer or current has no ModifiedDate
+                if (
+                  !current.ModifiedDate ||
+                  !incoming.ModifiedDate ||
+                  new Date(incoming.ModifiedDate).getTime() >= new Date(current.ModifiedDate).getTime()
+                ) {
+                  merged[idx] = incoming;
+                }
+              } else {
+                merged.push(incoming);
+              }
+            });
+
+            if (JSON.stringify(prev) === JSON.stringify(merged)) {
               return prev;
             }
             try {
-              localStorage.setItem('gds_cached_products', JSON.stringify(list));
+              localStorage.setItem('gds_cached_products', JSON.stringify(merged));
             } catch {}
-            return list;
+            return merged;
           });
         }
       }, undefined, 100)
@@ -721,11 +758,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     prod.Variants.forEach((v) => {
       if (v.Status === 'active') sizeSet.add(v.Size);
     });
-    return Array.from(sizeSet).sort((a, b) => {
-      const numA = parseInt(a, 10);
-      const numB = parseInt(b, 10);
-      return !isNaN(numA) && !isNaN(numB) ? numA - numB : a.localeCompare(b);
-    });
+    return Array.from(sizeSet).sort(compareSizes);
   }, [getProductByCode]);
 
   const getAvailableColorsForCodeAndSize = useCallback((code: string, size: string): string[] => {
@@ -798,7 +831,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return { success: true };
   };
 
-  // Update Product
+  // Update Product (Supports multi-item variant adjustments of Cost, Selling, and Qty simultaneously)
   const updateProduct = (product: Product): { success: boolean; error?: string } => {
     const cleanCode = product.ProductCode.trim().toUpperCase();
     const existing = products.find(
@@ -808,17 +841,73 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return { success: false, error: `Another product already uses code "${cleanCode}". SKU must be unique.` };
     }
 
-    // Synchronize variant product codes if product code changed
-    const updatedVariants = (product.Variants || []).map((v) => ({
-      ...v,
-      ProductCode: cleanCode,
-    }));
+    const currentProd = products.find((p) => p.ProductID === product.ProductID);
+    const oldVariants = currentProd?.Variants || [];
+
+    // Track stock diffs and generate atomic audit transactions for any adjusted variant quantities
+    const stockTransactions: InventoryTransaction[] = [];
+    const nowIso = new Date().toISOString();
+    let totalDeducted = 0;
+    let totalAdded = 0;
+
+    const updatedVariants = (product.Variants || []).map((v, idx) => {
+      const oldVar = oldVariants.find((ov) => ov.VariantID === v.VariantID);
+      const oldStock = oldVar ? oldVar.CurrentStock : v.CurrentStock;
+      const newStock = Math.max(0, Number(v.CurrentStock) || 0);
+      const diff = newStock - oldStock;
+
+      const actPrice = Number(v.ActualPrice) >= 0 ? Number(v.ActualPrice) : (oldVar?.ActualPrice || 0);
+      const sellPrice = Number(v.SellingPrice) >= 0 ? Number(v.SellingPrice) : (oldVar?.SellingPrice || 0);
+
+      if (diff !== 0) {
+        const isPositive = diff > 0;
+        const absQty = Math.abs(diff);
+        const txType: InventoryTransactionType = isPositive ? 'Adjustment IN' : 'Adjustment OUT';
+
+        if (isPositive) {
+          totalAdded += absQty;
+        } else {
+          totalDeducted += absQty;
+        }
+
+        const tx: InventoryTransaction = {
+          TransactionID: `TX-ADJ-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+          TransactionDate: nowIso,
+          TransactionType: txType,
+          VariantID: v.VariantID,
+          ProductCode: cleanCode,
+          ProductName: product.ProductName,
+          Size: v.Size.trim(),
+          Color: v.Color.trim(),
+          Quantity: absQty,
+          ActualPrice: actPrice,
+          SellingPrice: sellPrice,
+          TotalCost: actPrice * absQty,
+          TotalSellingValue: sellPrice * absQty,
+          Notes: `Multi-item inventory adjustment by Admin (${oldStock} -> ${newStock} units)`,
+          CreatedBy: currentUser?.name || 'Administrator',
+        };
+        stockTransactions.push(tx);
+      }
+
+      return {
+        ...v,
+        ProductCode: cleanCode,
+        Size: v.Size.trim(),
+        Color: v.Color.trim(),
+        ActualPrice: actPrice,
+        SellingPrice: sellPrice,
+        CurrentStock: newStock,
+        MinimumStock: Number(v.MinimumStock) >= 0 ? Number(v.MinimumStock) : 5,
+        Status: v.Status || 'active',
+      };
+    });
 
     const updated: Product = {
       ...product,
       ProductCode: cleanCode,
       Variants: updatedVariants,
-      ModifiedDate: new Date().toISOString(),
+      ModifiedDate: nowIso,
     };
 
     setProducts((prev) => {
@@ -829,7 +918,31 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return next;
     });
     saveProductToFirestore(updated).catch(console.error);
-    showToast(`Product "${product.ProductName}" (${cleanCode}) updated.`);
+
+    if (stockTransactions.length > 0) {
+      setTransactions((prev) => {
+        const next = [...stockTransactions, ...prev];
+        try {
+          localStorage.setItem('gds_cached_transactions', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      stockTransactions.forEach((tx) => {
+        saveTransactionToFirestore(tx).catch(console.error);
+      });
+    }
+
+    if (stockTransactions.length > 0) {
+      const summaryMsg = [];
+      if (totalDeducted > 0) summaryMsg.push(`deducted ${totalDeducted} units`);
+      if (totalAdded > 0) summaryMsg.push(`added ${totalAdded} units`);
+      showToast(
+        `Product "${product.ProductName}" updated: ${stockTransactions.length} variant(s) adjusted (${summaryMsg.join(', ')})!`
+      );
+    } else {
+      showToast(`Product "${product.ProductName}" (${cleanCode}) updated successfully.`);
+    }
+
     return { success: true };
   };
 
@@ -843,8 +956,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // Update Existing Variant (Admin or adjustments)
-  const updateVariant = (productId: string, variant: ProductVariant): { success: boolean; error?: string } => {
+  // Update Existing Variant (Admin or adjustments) - Atomic prices, details and stock adjustment
+  const updateVariant = (
+    productId: string,
+    variant: ProductVariant,
+    stockAdjustment?: {
+      newStock: number;
+      reason?: string;
+    }
+  ): { success: boolean; error?: string } => {
     const prod = products.find((p) => p.ProductID === productId);
     if (!prod) return { success: false, error: 'Product not found' };
 
@@ -862,16 +982,96 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       };
     }
 
-    const updatedVariants = prod.Variants.map((v) => (v.VariantID === variant.VariantID ? variant : v));
+    const existingVariant = prod.Variants.find((v) => v.VariantID === variant.VariantID) || variant;
+    const oldStock = existingVariant.CurrentStock;
+
+    // Handle stock adjustment atomically with price updates
+    let finalStock = variant.CurrentStock;
+    let recordedTx: InventoryTransaction | null = null;
+
+    if (stockAdjustment && typeof stockAdjustment.newStock === 'number') {
+      if (stockAdjustment.newStock < 0) {
+        return { success: false, error: 'Stock quantity cannot be negative' };
+      }
+      finalStock = stockAdjustment.newStock;
+      const diff = finalStock - oldStock;
+      if (diff !== 0) {
+        const isPositive = diff > 0;
+        const absQty = Math.abs(diff);
+        const txType: InventoryTransactionType = isPositive ? 'Adjustment IN' : 'Adjustment OUT';
+
+        recordedTx = {
+          TransactionID: `TX-ADJ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          TransactionDate: new Date().toISOString(),
+          TransactionType: txType,
+          VariantID: variant.VariantID,
+          ProductCode: prod.ProductCode,
+          ProductName: prod.ProductName,
+          Size: variant.Size.trim(),
+          Color: variant.Color.trim(),
+          Quantity: absQty,
+          ActualPrice: Number(variant.ActualPrice) || 0, // Freshly updated cost price
+          SellingPrice: Number(variant.SellingPrice) || 0, // Freshly updated selling price
+          TotalCost: (Number(variant.ActualPrice) || 0) * absQty,
+          TotalSellingValue: (Number(variant.SellingPrice) || 0) * absQty,
+          Notes: stockAdjustment.reason || `Manual Stock Adjustment by Admin (${oldStock} -> ${finalStock})`,
+          CreatedBy: currentUser?.name || 'Administrator',
+        };
+      }
+    }
+
+    const finalVariant: ProductVariant = {
+      ...variant,
+      Size: variant.Size.trim(),
+      Color: variant.Color.trim(),
+      ActualPrice: Number(variant.ActualPrice) || 0,
+      SellingPrice: Number(variant.SellingPrice) || 0,
+      CurrentStock: finalStock,
+      MinimumStock: Number(variant.MinimumStock) || 0,
+      Status: variant.Status,
+    };
+
+    const updatedVariants = prod.Variants.map((v) => (v.VariantID === variant.VariantID ? finalVariant : v));
     const updatedProd: Product = {
       ...prod,
       Variants: updatedVariants,
       ModifiedDate: new Date().toISOString(),
     };
 
-    setProducts((prev) => prev.map((p) => (p.ProductID === productId ? updatedProd : p)));
-    saveProductToFirestore(updatedProd).catch(console.error);
-    showToast(`Variant (Size ${variant.Size}, Color ${variant.Color}) updated successfully.`);
+    setProducts((prev) => {
+      const next = prev.map((p) => (p.ProductID === productId ? updatedProd : p));
+      try {
+        localStorage.setItem('gds_cached_products', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    saveProductToFirestore(updatedProd).catch((err) => {
+      console.error('Failed to save updated variant to Firestore:', err);
+    });
+
+    if (recordedTx) {
+      setTransactions((prev) => {
+        const next = [recordedTx!, ...prev];
+        try {
+          localStorage.setItem('gds_cached_transactions', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      saveTransactionToFirestore(recordedTx).catch((err) => {
+        console.error('Failed to save adjustment transaction to Firestore:', err);
+      });
+    }
+
+    if (recordedTx) {
+      const dir = recordedTx.TransactionType === 'Adjustment IN' ? 'increased' : 'deducted';
+      showToast(
+        `Variant updated & stock ${dir} (${oldStock} → ${finalStock} units) for ${prod.ProductCode} (${finalVariant.Size}/${finalVariant.Color}).`
+      );
+    } else {
+      showToast(`Variant (Size ${finalVariant.Size}, Color ${finalVariant.Color}) updated successfully.`);
+    }
+
     return { success: true };
   };
 
@@ -882,60 +1082,85 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     newStock: number,
     reason: string
   ): { success: boolean; error?: string } => {
-    const prod = products.find((p) => p.ProductID === productId);
-    if (!prod) return { success: false, error: 'Product not found' };
+    let result: { success: boolean; error?: string } = { success: false };
 
-    const variant = prod.Variants.find((v) => v.VariantID === variantId);
-    if (!variant) return { success: false, error: 'Variant not found' };
+    setProducts((prevProducts) => {
+      const prod = prevProducts.find((p) => p.ProductID === productId);
+      if (!prod) {
+        result = { success: false, error: 'Product not found' };
+        return prevProducts;
+      }
 
-    if (newStock < 0) {
-      return { success: false, error: 'Stock quantity cannot be negative' };
-    }
+      const variant = prod.Variants.find((v) => v.VariantID === variantId);
+      if (!variant) {
+        result = { success: false, error: 'Variant not found' };
+        return prevProducts;
+      }
 
-    const diff = newStock - variant.CurrentStock;
-    if (diff === 0) {
-      return { success: true };
-    }
+      if (newStock < 0) {
+        result = { success: false, error: 'Stock quantity cannot be negative' };
+        return prevProducts;
+      }
 
-    const isPositive = diff > 0;
-    const absQty = Math.abs(diff);
-    const txType: InventoryTransactionType = isPositive ? 'Adjustment IN' : 'Adjustment OUT';
+      const diff = newStock - variant.CurrentStock;
+      if (diff === 0) {
+        result = { success: true };
+        return prevProducts;
+      }
 
-    const updatedVariant = { ...variant, CurrentStock: newStock };
-    const updatedVariants = prod.Variants.map((v) => (v.VariantID === variantId ? updatedVariant : v));
-    const updatedProd: Product = {
-      ...prod,
-      Variants: updatedVariants,
-      ModifiedDate: new Date().toISOString(),
-    };
+      const isPositive = diff > 0;
+      const absQty = Math.abs(diff);
+      const txType: InventoryTransactionType = isPositive ? 'Adjustment IN' : 'Adjustment OUT';
 
-    setProducts((prev) => prev.map((p) => (p.ProductID === productId ? updatedProd : p)));
-    saveProductToFirestore(updatedProd).catch(console.error);
+      const updatedVariant = { ...variant, CurrentStock: newStock };
+      const updatedVariants = prod.Variants.map((v) => (v.VariantID === variantId ? updatedVariant : v));
+      const updatedProd: Product = {
+        ...prod,
+        Variants: updatedVariants,
+        ModifiedDate: new Date().toISOString(),
+      };
 
-    // Record adjustment transaction
-    const tx: InventoryTransaction = {
-      TransactionID: `TX-ADJ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      TransactionDate: new Date().toISOString(),
-      TransactionType: txType,
-      VariantID: variant.VariantID,
-      ProductCode: prod.ProductCode,
-      ProductName: prod.ProductName,
-      Size: variant.Size,
-      Color: variant.Color,
-      Quantity: absQty,
-      ActualPrice: variant.ActualPrice,
-      SellingPrice: variant.SellingPrice,
-      TotalCost: variant.ActualPrice * absQty,
-      TotalSellingValue: variant.SellingPrice * absQty,
-      Notes: reason || `Manual Stock Adjustment by Admin (${variant.CurrentStock} -> ${newStock})`,
-      CreatedBy: currentUser?.name || 'Administrator',
-    };
+      saveProductToFirestore(updatedProd).catch(console.error);
 
-    setTransactions((prev) => [tx, ...prev]);
-    saveTransactionToFirestore(tx).catch(console.error);
+      // Record adjustment transaction
+      const tx: InventoryTransaction = {
+        TransactionID: `TX-ADJ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        TransactionDate: new Date().toISOString(),
+        TransactionType: txType,
+        VariantID: variant.VariantID,
+        ProductCode: prod.ProductCode,
+        ProductName: prod.ProductName,
+        Size: variant.Size,
+        Color: variant.Color,
+        Quantity: absQty,
+        ActualPrice: variant.ActualPrice,
+        SellingPrice: variant.SellingPrice,
+        TotalCost: variant.ActualPrice * absQty,
+        TotalSellingValue: variant.SellingPrice * absQty,
+        Notes: reason || `Manual Stock Adjustment by Admin (${variant.CurrentStock} -> ${newStock})`,
+        CreatedBy: currentUser?.name || 'Administrator',
+      };
 
-    showToast(`Stock adjusted from ${variant.CurrentStock} to ${newStock} units for ${prod.ProductCode} (${variant.Size}/${variant.Color})`);
-    return { success: true };
+      setTransactions((prev) => {
+        const next = [tx, ...prev];
+        try {
+          localStorage.setItem('gds_cached_transactions', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      saveTransactionToFirestore(tx).catch(console.error);
+
+      showToast(`Stock adjusted from ${variant.CurrentStock} to ${newStock} units for ${prod.ProductCode} (${variant.Size}/${variant.Color})`);
+      result = { success: true };
+
+      const nextProducts = prevProducts.map((p) => (p.ProductID === productId ? updatedProd : p));
+      try {
+        localStorage.setItem('gds_cached_products', JSON.stringify(nextProducts));
+      } catch {}
+      return nextProducts;
+    });
+
+    return result;
   };
 
   // Add New Variant to an Existing Product (Admin)
@@ -1453,6 +1678,432 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return { success: true, order: newOrder };
   };
 
+  // Update Order (Admin: adjusts item quantities, status, payment and recalculates stock in real-time)
+  const updateOrder = (updatedOrder: Order): { success: boolean; error?: string } => {
+    const existing = orders.find((o) => o.OrderID === updatedOrder.OrderID);
+    if (!existing) {
+      return { success: false, error: 'Order not found' };
+    }
+
+    const wasActive = existing.Status !== 'cancelled';
+    const willBeActive = updatedOrder.Status !== 'cancelled';
+
+    // Calculate item quantities changes: map of variant key -> net delta to DEDUCT from stock
+    // Positive delta = need to deduct more stock from inventory
+    // Negative delta = need to restore stock to inventory
+    const stockDeltas = new Map<
+      string,
+      { delta: number; productCode: string; size: string; color: string; productName: string }
+    >();
+
+    if (wasActive) {
+      existing.Items.forEach((item) => {
+        const key = `${item.ProductCode}___${item.Size}___${item.Color}`.toLowerCase();
+        const prev = stockDeltas.get(key) || {
+          delta: 0,
+          productCode: item.ProductCode,
+          size: item.Size,
+          color: item.Color,
+          productName: item.ProductName,
+        };
+        prev.delta -= item.Quantity; // undo previous deduction
+        stockDeltas.set(key, prev);
+      });
+    }
+
+    if (willBeActive) {
+      updatedOrder.Items.forEach((item) => {
+        const key = `${item.ProductCode}___${item.Size}___${item.Color}`.toLowerCase();
+        const prev = stockDeltas.get(key) || {
+          delta: 0,
+          productCode: item.ProductCode,
+          size: item.Size,
+          color: item.Color,
+          productName: item.ProductName,
+        };
+        prev.delta += item.Quantity; // apply new deduction
+        stockDeltas.set(key, prev);
+      });
+    }
+
+    // Check availability and update product stock
+    const updatedProducts = [...products];
+    const newTxList: InventoryTransaction[] = [];
+    const nowIso = new Date().toISOString();
+
+    for (const [, info] of stockDeltas.entries()) {
+      if (info.delta === 0) continue;
+
+      let pIndex = updatedProducts.findIndex(
+        (p) => p.ProductCode.trim().toUpperCase() === info.productCode.trim().toUpperCase()
+      );
+      if (pIndex < 0) {
+        return { success: false, error: `Product "${info.productCode}" not found in catalog` };
+      }
+
+      const prod = updatedProducts[pIndex];
+      const vIndex = prod.Variants.findIndex(
+        (v) =>
+          v.Size.trim().toLowerCase() === info.size.trim().toLowerCase() &&
+          v.Color.trim().toLowerCase() === info.color.trim().toLowerCase()
+      );
+      if (vIndex < 0) {
+        return {
+          success: false,
+          error: `Variant (${info.size}/${info.color}) not found for ${info.productCode}`,
+        };
+      }
+
+      const variant = prod.Variants[vIndex];
+      if (info.delta > 0 && variant.CurrentStock < info.delta) {
+        return {
+          success: false,
+          error: `Insufficient stock for ${info.productName} (${info.size}/${info.color}). Available: ${variant.CurrentStock}, Needed additional: ${info.delta}`,
+        };
+      }
+
+      // Deduct or restore stock
+      const newStock = Math.max(0, variant.CurrentStock - info.delta);
+      const updatedVar = {
+        ...variant,
+        CurrentStock: newStock,
+      };
+      const updatedVarList = [...prod.Variants];
+      updatedVarList[vIndex] = updatedVar;
+      const updatedProd = {
+        ...prod,
+        Variants: updatedVarList,
+        ModifiedDate: nowIso,
+      };
+      updatedProducts[pIndex] = updatedProd;
+      saveProductToFirestore(updatedProd).catch(console.error);
+
+      // Audit transaction
+      const tx: InventoryTransaction = {
+        TransactionID: `TX-ORDEDIT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        TransactionDate: nowIso,
+        TransactionType: info.delta > 0 ? 'Customer Sale' : 'Adjustment IN',
+        VariantID: variant.VariantID,
+        ProductCode: info.productCode,
+        ProductName: info.productName,
+        Size: info.size,
+        Color: info.color,
+        Quantity: Math.abs(info.delta),
+        ActualPrice: variant.ActualPrice,
+        SellingPrice: variant.SellingPrice,
+        TotalCost: variant.ActualPrice * Math.abs(info.delta),
+        TotalSellingValue: variant.SellingPrice * Math.abs(info.delta),
+        ReferenceID: updatedOrder.OrderID,
+        CustomerID: updatedOrder.CustomerID,
+        CustomerName: updatedOrder.CustomerName || 'Walk-in Customer',
+        Notes: `Order #${updatedOrder.OrderID} edit: stock ${info.delta > 0 ? `deducted (-${info.delta})` : `restored (+${Math.abs(info.delta)})`}`,
+        CreatedBy: currentUser?.name || 'Administrator',
+      };
+      newTxList.push(tx);
+      saveTransactionToFirestore(tx).catch(console.error);
+    }
+
+    // Recalculate totals
+    let newSubtotal = 0;
+    let newCost = 0;
+    const recalculatedItems: OrderItem[] = updatedOrder.Items.map((item, idx) => {
+      const lineSubtotal = item.UnitPrice * item.Quantity;
+      const lineCost = item.ActualPrice * item.Quantity;
+      newSubtotal += lineSubtotal;
+      newCost += lineCost;
+      return {
+        ...item,
+        OrderItemID: item.OrderItemID || `item-${updatedOrder.OrderID}-${idx}`,
+        OrderID: updatedOrder.OrderID,
+        Subtotal: lineSubtotal,
+        Profit: lineSubtotal - lineCost,
+      };
+    });
+
+    const finalDiscount = Math.min(updatedOrder.Discount || 0, newSubtotal);
+    const finalTotal = Math.max(0, newSubtotal - finalDiscount);
+    const finalProfit = finalTotal - newCost;
+
+    const finalOrder: Order = {
+      ...updatedOrder,
+      Items: recalculatedItems,
+      Subtotal: newSubtotal,
+      Discount: finalDiscount,
+      Total: finalTotal,
+      Cost: newCost,
+      Profit: finalProfit,
+    };
+
+    setProducts(updatedProducts);
+    try {
+      localStorage.setItem('gds_cached_products', JSON.stringify(updatedProducts));
+    } catch {}
+
+    if (newTxList.length > 0) {
+      setTransactions((prev) => {
+        const next = [...newTxList, ...prev];
+        try {
+          localStorage.setItem('gds_cached_transactions', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+
+    setOrders((prev) => {
+      const next = prev.map((o) => (o.OrderID === finalOrder.OrderID ? finalOrder : o));
+      try {
+        localStorage.setItem('gds_cached_orders', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    if (activeReceiptOrder?.OrderID === finalOrder.OrderID) {
+      setActiveReceiptOrder(finalOrder);
+    }
+
+    saveOrderToFirestore(finalOrder).catch(console.error);
+    showToast(`Order #${finalOrder.OrderID} updated and inventory stock synchronized!`);
+    return { success: true };
+  };
+
+  // Delete Order (Admin: deletes order and optionally restores stock to inventory)
+  const deleteOrder = (orderId: string, restoreStock: boolean = true): { success: boolean; error?: string } => {
+    const existing = orders.find((o) => o.OrderID === orderId);
+    if (!existing) {
+      return { success: false, error: 'Order not found' };
+    }
+
+    const updatedProducts = [...products];
+    const newTxList: InventoryTransaction[] = [];
+    const nowIso = new Date().toISOString();
+
+    if (restoreStock && existing.Status !== 'cancelled') {
+      existing.Items.forEach((item) => {
+        const pIndex = updatedProducts.findIndex(
+          (p) => p.ProductCode.trim().toUpperCase() === item.ProductCode.trim().toUpperCase()
+        );
+        if (pIndex >= 0) {
+          const prod = updatedProducts[pIndex];
+          const vIndex = prod.Variants.findIndex(
+            (v) =>
+              v.Size.trim().toLowerCase() === item.Size.trim().toLowerCase() &&
+              v.Color.trim().toLowerCase() === item.Color.trim().toLowerCase()
+          );
+          if (vIndex >= 0) {
+            const v = prod.Variants[vIndex];
+            const updatedVar = {
+              ...v,
+              CurrentStock: v.CurrentStock + item.Quantity,
+            };
+            const updatedVarList = [...prod.Variants];
+            updatedVarList[vIndex] = updatedVar;
+            const updatedProd = {
+              ...prod,
+              Variants: updatedVarList,
+              ModifiedDate: nowIso,
+            };
+            updatedProducts[pIndex] = updatedProd;
+            saveProductToFirestore(updatedProd).catch(console.error);
+
+            const tx: InventoryTransaction = {
+              TransactionID: `TX-ORDDEL-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              TransactionDate: nowIso,
+              TransactionType: 'Adjustment IN',
+              VariantID: v.VariantID,
+              ProductCode: item.ProductCode,
+              ProductName: item.ProductName,
+              Size: item.Size,
+              Color: item.Color,
+              Quantity: item.Quantity,
+              ActualPrice: item.ActualPrice,
+              SellingPrice: item.UnitPrice,
+              TotalCost: item.ActualPrice * item.Quantity,
+              TotalSellingValue: item.UnitPrice * item.Quantity,
+              ReferenceID: orderId,
+              Notes: `Restored stock from deleted order #${orderId}`,
+              CreatedBy: currentUser?.name || 'Administrator',
+            };
+            newTxList.push(tx);
+            saveTransactionToFirestore(tx).catch(console.error);
+          }
+        }
+      });
+
+      setProducts(updatedProducts);
+      try {
+        localStorage.setItem('gds_cached_products', JSON.stringify(updatedProducts));
+      } catch {}
+
+      if (newTxList.length > 0) {
+        setTransactions((prev) => {
+          const next = [...newTxList, ...prev];
+          try {
+            localStorage.setItem('gds_cached_transactions', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
+    }
+
+    setOrders((prev) => {
+      const next = prev.filter((o) => o.OrderID !== orderId);
+      try {
+        localStorage.setItem('gds_cached_orders', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    if (activeReceiptOrder?.OrderID === orderId) {
+      setActiveReceiptOrder(null);
+    }
+
+    deleteOrderFromFirestore(orderId).catch(console.error);
+    showToast(`Order #${orderId} deleted and ${restoreStock ? 'stock restored' : 'removed'}.`);
+    return { success: true };
+  };
+
+  // Update Inventory Transaction (Admin: recalculates stock delta and syncs with inventory)
+  const updateTransaction = (updatedTx: InventoryTransaction): { success: boolean; error?: string } => {
+    const existing = transactions.find((t) => t.TransactionID === updatedTx.TransactionID);
+    if (!existing) {
+      return { success: false, error: 'Transaction not found' };
+    }
+
+    const isOut = ['Customer Sale', 'Damaged', 'Lost', 'Adjustment OUT', 'Supplier Return'].includes(
+      existing.TransactionType
+    );
+    const isIn = ['Stock Received', 'Restock', 'Initial Stock', 'Adjustment IN', 'Supplier Purchase'].includes(
+      existing.TransactionType
+    );
+
+    const qtyDelta = updatedTx.Quantity - existing.Quantity;
+    const updatedProducts = [...products];
+    const nowIso = new Date().toISOString();
+
+    if (qtyDelta !== 0) {
+      const pIndex = updatedProducts.findIndex(
+        (p) => p.ProductCode.trim().toUpperCase() === existing.ProductCode.trim().toUpperCase()
+      );
+      if (pIndex >= 0) {
+        const prod = updatedProducts[pIndex];
+        const vIndex = prod.Variants.findIndex(
+          (v) =>
+            v.Size.trim().toLowerCase() === existing.Size.trim().toLowerCase() &&
+            v.Color.trim().toLowerCase() === existing.Color.trim().toLowerCase()
+        );
+        if (vIndex >= 0) {
+          const v = prod.Variants[vIndex];
+          let newStock = v.CurrentStock;
+          if (isOut) {
+            // OUT transaction: increasing quantity deducts more, decreasing quantity restores
+            if (qtyDelta > 0 && v.CurrentStock < qtyDelta) {
+              return { success: false, error: `Insufficient stock! Only ${v.CurrentStock} available to deduct.` };
+            }
+            newStock = Math.max(0, v.CurrentStock - qtyDelta);
+          } else if (isIn) {
+            // IN transaction: increasing quantity adds more, decreasing quantity subtracts
+            newStock = Math.max(0, v.CurrentStock + qtyDelta);
+          }
+
+          const updatedVar = { ...v, CurrentStock: newStock };
+          const updatedVarList = [...prod.Variants];
+          updatedVarList[vIndex] = updatedVar;
+          const updatedProd = { ...prod, Variants: updatedVarList, ModifiedDate: nowIso };
+          updatedProducts[pIndex] = updatedProd;
+          saveProductToFirestore(updatedProd).catch(console.error);
+
+          setProducts(updatedProducts);
+          try {
+            localStorage.setItem('gds_cached_products', JSON.stringify(updatedProducts));
+          } catch {}
+        }
+      }
+    }
+
+    const finalTx: InventoryTransaction = {
+      ...updatedTx,
+      TotalCost: (updatedTx.ActualPrice || 0) * updatedTx.Quantity,
+      TotalSellingValue: (updatedTx.SellingPrice || 0) * updatedTx.Quantity,
+    };
+
+    setTransactions((prev) => {
+      const next = prev.map((t) => (t.TransactionID === finalTx.TransactionID ? finalTx : t));
+      try {
+        localStorage.setItem('gds_cached_transactions', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    saveTransactionToFirestore(finalTx).catch(console.error);
+    showToast(`Transaction #${finalTx.TransactionID} updated and stock recalculated!`);
+    return { success: true };
+  };
+
+  // Delete Inventory Transaction (Admin: reverses stock impact and deletes)
+  const deleteTransaction = (transactionId: string): { success: boolean; error?: string } => {
+    const existing = transactions.find((t) => t.TransactionID === transactionId);
+    if (!existing) {
+      return { success: false, error: 'Transaction not found' };
+    }
+
+    const isOut = ['Customer Sale', 'Damaged', 'Lost', 'Adjustment OUT', 'Supplier Return'].includes(
+      existing.TransactionType
+    );
+    const isIn = ['Stock Received', 'Restock', 'Initial Stock', 'Adjustment IN', 'Supplier Purchase'].includes(
+      existing.TransactionType
+    );
+
+    const updatedProducts = [...products];
+    const nowIso = new Date().toISOString();
+
+    const pIndex = updatedProducts.findIndex(
+      (p) => p.ProductCode.trim().toUpperCase() === existing.ProductCode.trim().toUpperCase()
+    );
+    if (pIndex >= 0) {
+      const prod = updatedProducts[pIndex];
+      const vIndex = prod.Variants.findIndex(
+        (v) =>
+          v.Size.trim().toLowerCase() === existing.Size.trim().toLowerCase() &&
+          v.Color.trim().toLowerCase() === existing.Color.trim().toLowerCase()
+      );
+      if (vIndex >= 0) {
+        const v = prod.Variants[vIndex];
+        let newStock = v.CurrentStock;
+        if (isOut) {
+          // Reversing an OUT transaction restores stock
+          newStock = v.CurrentStock + existing.Quantity;
+        } else if (isIn) {
+          // Reversing an IN transaction removes stock
+          newStock = Math.max(0, v.CurrentStock - existing.Quantity);
+        }
+
+        const updatedVar = { ...v, CurrentStock: newStock };
+        const updatedVarList = [...prod.Variants];
+        updatedVarList[vIndex] = updatedVar;
+        const updatedProd = { ...prod, Variants: updatedVarList, ModifiedDate: nowIso };
+        updatedProducts[pIndex] = updatedProd;
+        saveProductToFirestore(updatedProd).catch(console.error);
+
+        setProducts(updatedProducts);
+        try {
+          localStorage.setItem('gds_cached_products', JSON.stringify(updatedProducts));
+        } catch {}
+      }
+    }
+
+    setTransactions((prev) => {
+      const next = prev.filter((t) => t.TransactionID !== transactionId);
+      try {
+        localStorage.setItem('gds_cached_transactions', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    deleteTransactionFromFirestore(transactionId).catch(console.error);
+    showToast(`Transaction deleted and inventory stock reversed!`);
+    return { success: true };
+  };
+
   // Masters Management
   const addDressType = (type: Omit<DressType, 'DressTypeID'>) => {
     const newType: DressType = {
@@ -1873,6 +2524,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         receiveStock,
         issueStock,
         completeSale,
+
+        updateOrder,
+        deleteOrder,
+        updateTransaction,
+        deleteTransaction,
 
         addDressType,
         updateDressType,

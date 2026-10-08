@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
+import { compareSizes } from '../../utils/sizeUtils';
 import {
   Boxes,
   Search,
@@ -11,6 +12,7 @@ import {
   CheckCircle2,
   XCircle,
   Shirt,
+  Palette,
 } from 'lucide-react';
 
 interface InventoryViewProps {
@@ -19,13 +21,14 @@ interface InventoryViewProps {
 }
 
 export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onOpenIssue }) => {
-  const { products, dressTypes, kpis, getDressTypeName, isAdmin, showToast } = useStore();
+  const { products, dressTypes, colors, kpis, getDressTypeName, isAdmin, showToast } = useStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
+  const [selectedColor, setSelectedColor] = useState('all');
   const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'in_stock' | 'low_stock' | 'out_of_stock'>('all');
 
-  // Flatten products into variant rows
+  // Flatten products into variant rows, ordered by Product Code and size number
   const allVariants = useMemo(() => {
     const rows: {
       productId: string;
@@ -42,10 +45,23 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
       image: string;
     }[] = [];
 
-    products.forEach((p) => {
+    // Order by Product Code
+    const sortedProducts = [...products].sort((a, b) =>
+      a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    sortedProducts.forEach((p) => {
       const typeName = getDressTypeName(p.DressTypeID);
       const img = p.Images[0]?.ImageURL || '';
-      p.Variants.forEach((v) => {
+
+      // Order variants by size number
+      const sortedVariants = [...p.Variants].sort((a, b) => {
+        const sizeDiff = compareSizes(a.Size, b.Size);
+        if (sizeDiff !== 0) return sizeDiff;
+        return a.Color.localeCompare(b.Color);
+      });
+
+      sortedVariants.forEach((v) => {
         rows.push({
           productId: p.ProductID,
           variantId: v.VariantID,
@@ -73,6 +89,10 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
         return false;
       }
 
+      if (selectedColor !== 'all' && row.color.toLowerCase() !== selectedColor.toLowerCase()) {
+        return false;
+      }
+
       if (stockStatusFilter === 'out_of_stock' && row.currentStock > 0) return false;
       if (stockStatusFilter === 'low_stock' && (row.currentStock > row.minimumStock || row.currentStock === 0)) return false;
       if (stockStatusFilter === 'in_stock' && row.currentStock === 0) return false;
@@ -88,7 +108,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
 
       return true;
     });
-  }, [allVariants, selectedType, stockStatusFilter, searchQuery]);
+  }, [allVariants, selectedType, selectedColor, stockStatusFilter, searchQuery]);
 
   // Export CSV
   const handleExportCSV = () => {
@@ -193,7 +213,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
       {/* Search and Filters */}
       <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-          <div className="sm:col-span-6 relative">
+          <div className="sm:col-span-4 relative">
             <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
             <input
               type="text"
@@ -214,6 +234,21 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
               {dressTypes.map((dt) => (
                 <option key={dt.DressTypeID} value={dt.Name}>
                   {dt.Name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sm:col-span-2">
+            <select
+              value={selectedColor}
+              onChange={(e) => setSelectedColor(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:bg-white"
+            >
+              <option value="all">All Colors</option>
+              {colors.map((c) => (
+                <option key={c.ColorID} value={c.ColorName}>
+                  {c.ColorName}
                 </option>
               ))}
             </select>
@@ -249,7 +284,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
               <tr>
                 <th className="py-3 px-3">SKU</th>
                 <th className="py-3 px-3">Product Name</th>
-                <th className="py-3 px-3">Size</th>
+                <th className="py-3 px-3">Size (Ordered by Number)</th>
                 <th className="py-3 px-3">Color</th>
                 {isAdmin && <th className="py-3 px-3 text-right">Actual Cost</th>}
                 <th className="py-3 px-3 text-right">Selling Price</th>

@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { Order } from '../../types';
+import { EditOrderModal } from './EditOrderModal';
 import {
   Receipt,
   Search,
   Printer,
   Eye,
+  Edit2,
   Calendar,
   DollarSign,
   Download,
@@ -21,6 +23,7 @@ export const OrdersView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'pending' | 'cancelled'>('all');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -228,14 +231,25 @@ export const OrdersView: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => setActiveReceiptOrder(order)}
-                        className="px-2.5 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100 border border-stone-300 rounded-md shadow-2xs inline-flex items-center gap-1"
-                        title="View / Print Receipt"
-                      >
-                        <Printer className="w-3 h-3 text-rose-600" />
-                        <span>Receipt</span>
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setActiveReceiptOrder(order)}
+                          className="px-2.5 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100 border border-stone-300 rounded-md shadow-2xs inline-flex items-center gap-1 cursor-pointer"
+                          title="View / Print Receipt"
+                        >
+                          <Printer className="w-3 h-3 text-rose-600" />
+                          <span>Receipt</span>
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setEditingOrder(order)}
+                            className="p-1 text-stone-500 hover:text-rose-600 hover:bg-rose-50 border border-stone-200 rounded-md cursor-pointer transition-colors"
+                            title="Edit Order & Adjust Inventory"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -295,19 +309,41 @@ export const OrdersView: React.FC = () => {
               <span className="text-stone-500">
                 Grand Total: <strong className="text-stone-900 font-mono-numbers">${selectedOrder.Total.toFixed(2)}</strong>
               </span>
-              <button
-                onClick={() => {
-                  setActiveReceiptOrder(selectedOrder);
-                  setSelectedOrder(null);
-                }}
-                className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg flex items-center gap-1 shadow-xs"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Print Full Receipt
-              </button>
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setEditingOrder(selectedOrder);
+                      setSelectedOrder(null);
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Edit Order</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setActiveReceiptOrder(selectedOrder);
+                    setSelectedOrder(null);
+                  }}
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Full Receipt</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Order Modal */}
+      {editingOrder && (
+        <EditOrderModal
+          order={editingOrder}
+          onClose={() => setEditingOrder(null)}
+        />
       )}
     </div>
   );

@@ -218,11 +218,13 @@ export const InventoryInView: React.FC<InventoryInViewProps> = ({
                 onChange={(e) => setProductCode(e.target.value)}
                 className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono font-bold focus:bg-white focus:ring-1 focus:ring-rose-500"
               >
-                {products.map((p) => (
-                  <option key={p.ProductID} value={p.ProductCode}>
-                    {p.ProductCode} — {p.ProductName}
-                  </option>
-                ))}
+                {[...products]
+                  .sort((a, b) => a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' }))
+                  .map((p) => (
+                    <option key={p.ProductID} value={p.ProductCode}>
+                      {p.ProductCode} — {p.ProductName}
+                    </option>
+                  ))}
               </select>
             </div>
 

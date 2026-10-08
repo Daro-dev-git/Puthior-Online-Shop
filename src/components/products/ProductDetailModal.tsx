@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { Product, ProductVariant, ProductImage } from '../../types';
 import { processLocalImageFile } from '../../utils/imageUtils';
+import { compareSizes } from '../../utils/sizeUtils';
 import { VariantEditModal } from './VariantEditModal';
 import { AddVariantModal } from './AddVariantModal';
 import { EditProductModal } from './EditProductModal';
@@ -19,6 +20,8 @@ import {
   Loader2,
   SlidersHorizontal,
   Edit2,
+  Palette,
+  Check,
 } from 'lucide-react';
 
 interface ProductDetailModalProps {
@@ -28,7 +31,7 @@ interface ProductDetailModalProps {
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productId, onClose, onOpenRestock }) => {
-  const { products, updateProduct, deleteProduct, getDressTypeName, transactions, isAdmin, showToast } = useStore();
+  const { products, updateProduct, deleteProduct, getDressTypeName, transactions, isAdmin, showToast, colors } = useStore();
   const product = products.find((p) => p.ProductID === productId);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -40,6 +43,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
   const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null);
   const [showAddVariant, setShowAddVariant] = useState(false);
   const [showEditProductModal, setShowEditProductModal] = useState(false);
+  const [selectedVariantColor, setSelectedVariantColor] = useState<string>('all');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!product) return null;
@@ -57,6 +61,43 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
   );
 
   const totalStock = product.Variants.reduce((sum, v) => sum + v.CurrentStock, 0);
+
+  // Requirement #3: Color list of distinct colors in variants for selection
+  const availableVariantColors = useMemo(() => {
+    if (!product) return [];
+    const map = new Map<string, { count: number; inStock: number }>();
+    product.Variants.forEach((v) => {
+      const existing = map.get(v.Color) || { count: 0, inStock: 0 };
+      map.set(v.Color, {
+        count: existing.count + 1,
+        inStock: existing.inStock + v.CurrentStock,
+      });
+    });
+    return Array.from(map.entries()).map(([colorName, data]) => {
+      const colorDef = colors.find((c) => c.ColorName.toLowerCase() === colorName.toLowerCase());
+      return {
+        colorName,
+        count: data.count,
+        inStock: data.inStock,
+        hexCode: colorDef?.HexCode || colorName.toLowerCase(),
+      };
+    });
+  }, [product, colors]);
+
+  // Requirements #2 & #3: Filter by selected color & strictly order by size number
+  const filteredAndSortedVariants = useMemo(() => {
+    if (!product) return [];
+    const list = product.Variants.filter((v) => {
+      if (selectedVariantColor === 'all') return true;
+      return v.Color.trim().toLowerCase() === selectedVariantColor.trim().toLowerCase();
+    });
+
+    return list.sort((a, b) => {
+      const sizeComparison = compareSizes(a.Size, b.Size);
+      if (sizeComparison !== 0) return sizeComparison;
+      return a.Color.localeCompare(b.Color);
+    });
+  }, [product, selectedVariantColor]);
 
   // Handle local image attachment from computer
   const handleLocalFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -419,14 +460,137 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
             </button>
           </div>
 
-          {/* Tab 1: Variant Matrix Table */}
+          {/* Tab 1: Variant Matrix Table (Requirements #2 and #3) */}
           {activeTab === 'variants' && (
-            <div className="space-y-3">
+            <div className="space-y-3.5">
+              {/* Color Filter & Related Colors Toolbar */}
+              <div className="bg-stone-50 border border-stone-200 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Palette className="w-4 h-4 text-rose-600" />
+                    <span className="text-xs font-bold text-stone-900 uppercase tracking-wider">
+                      Filter Variants by Color:
+                    </span>
+                    <span className="text-[11px] text-stone-500 font-mono-numbers">
+                      ({availableVariantColors.length} distinct {availableVariantColors.length === 1 ? 'color' : 'colors'})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    {selectedVariantColor !== 'all' && (
+                      <button
+                        onClick={() => setSelectedVariantColor('all')}
+                        className="text-xs text-rose-600 hover:text-rose-800 font-semibold underline cursor-pointer self-start sm:self-auto"
+                      >
+                        Reset / Show All Colors
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => setShowEditProductModal(true)}
+                        className="px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-100/70 hover:bg-rose-200 border border-rose-300 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Simultaneously adjust wholesale cost, retail selling price, and stock quantities across multiple items"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <span>Adjust Multi-Variants (Cost, Selling & Qty)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Color Pills Selector */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* All Colors Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVariantColor('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+                      selectedVariantColor === 'all'
+                        ? 'bg-rose-950 text-white shadow-xs'
+                        : 'bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 hover:border-stone-300'
+                    }`}
+                  >
+                    <span>All Colors</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono-numbers ${
+                        selectedVariantColor === 'all' ? 'bg-rose-800 text-white' : 'bg-stone-100 text-stone-600'
+                      }`}
+                    >
+                      {product.Variants.length}
+                    </span>
+                  </button>
+
+                  {/* Individual Color Pills */}
+                  {availableVariantColors.map((c) => {
+                    const isSelected = selectedVariantColor.toLowerCase() === c.colorName.toLowerCase();
+                    return (
+                      <button
+                        key={c.colorName}
+                        type="button"
+                        onClick={() => setSelectedVariantColor(isSelected ? 'all' : c.colorName)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-rose-100 text-rose-950 border-2 border-rose-500 ring-2 ring-rose-200 shadow-xs font-bold'
+                            : 'bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 hover:border-stone-300'
+                        }`}
+                      >
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border border-stone-300 shrink-0 shadow-2xs"
+                          style={{ backgroundColor: c.hexCode }}
+                        />
+                        <span>{c.colorName}</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-mono-numbers ${
+                            isSelected ? 'bg-rose-200 text-rose-900 font-bold' : 'bg-stone-100 text-stone-500'
+                          }`}
+                        >
+                          {c.count} {c.count === 1 ? 'size' : 'sizes'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Related Colors Context Banner (Requirement #3) */}
+                {selectedVariantColor !== 'all' && (
+                  <div className="pt-2 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="text-stone-700">
+                      Showing variants for color <span className="font-bold text-rose-900">{selectedVariantColor}</span>{' '}
+                      (<span className="font-mono-numbers font-semibold">{filteredAndSortedVariants.length}</span> sizes, ordered by size number).
+                    </div>
+                    {availableVariantColors.filter((c) => c.colorName.toLowerCase() !== selectedVariantColor.toLowerCase()).length > 0 && (
+                      <div className="flex items-center gap-1.5 text-stone-500 text-[11px]">
+                        <span className="font-medium text-stone-600">Other related colors:</span>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {availableVariantColors
+                            .filter((c) => c.colorName.toLowerCase() !== selectedVariantColor.toLowerCase())
+                            .map((rc) => (
+                              <button
+                                key={rc.colorName}
+                                type="button"
+                                onClick={() => setSelectedVariantColor(rc.colorName)}
+                                className="px-2 py-0.5 rounded bg-white hover:bg-rose-50 border border-stone-200 hover:border-rose-300 text-stone-700 hover:text-rose-800 transition-colors flex items-center gap-1 cursor-pointer font-medium"
+                                title={`Switch to ${rc.colorName}`}
+                              >
+                                <span
+                                  className="w-2 h-2 rounded-full border border-stone-300"
+                                  style={{ backgroundColor: rc.hexCode }}
+                                />
+                                <span>{rc.colorName}</span>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Variant Matrix Table */}
               <div className="border border-stone-200 rounded-lg overflow-hidden">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-stone-50 text-stone-600 border-b border-stone-200 font-semibold">
                     <tr>
-                      <th className="py-2.5 px-3">Size</th>
+                      <th className="py-2.5 px-3">Size (Ordered by Number)</th>
                       <th className="py-2.5 px-3">Color</th>
                       <th className="py-2.5 px-3 text-right">Cost (Actual)</th>
                       <th className="py-2.5 px-3 text-right">Selling Price</th>
@@ -437,73 +601,98 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
-                    {product.Variants.map((v) => {
-                      const isLow = v.CurrentStock <= v.MinimumStock && v.CurrentStock > 0;
-                      const isOut = v.CurrentStock === 0;
+                    {filteredAndSortedVariants.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-8 text-center text-stone-500 text-xs">
+                          No variants found matching color "{selectedVariantColor}".
+                          <button
+                            onClick={() => setSelectedVariantColor('all')}
+                            className="ml-2 text-rose-600 font-semibold underline cursor-pointer"
+                          >
+                            Show All Colors
+                          </button>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredAndSortedVariants.map((v) => {
+                        const isLow = v.CurrentStock <= v.MinimumStock && v.CurrentStock > 0;
+                        const isOut = v.CurrentStock === 0;
 
-                      return (
-                        <tr key={v.VariantID} className="hover:bg-stone-50/70">
-                          <td className="py-2.5 px-3 font-mono font-bold text-stone-900">{v.Size}</td>
-                          <td className="py-2.5 px-3">
-                            <span className="inline-flex items-center gap-1.5 font-medium text-stone-800">
-                              <span className="w-2.5 h-2.5 rounded-full border border-stone-300" style={{ backgroundColor: v.Color.toLowerCase() }} />
-                              {v.Color}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono-numbers text-stone-600">
-                            ${v.ActualPrice.toFixed(2)}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono-numbers font-bold text-stone-900">
-                            ${v.SellingPrice.toFixed(2)}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-mono-numbers text-stone-500">
-                            {v.MinimumStock}
-                          </td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span
-                              className={`font-mono-numbers font-bold px-2 py-0.5 rounded text-[11px] ${
-                                isOut
-                                  ? 'bg-rose-100 text-rose-800 font-bold'
-                                  : isLow
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-emerald-50 text-emerald-800'
-                              }`}
-                            >
-                              {v.CurrentStock}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 text-center">
-                            {isOut ? (
-                              <span className="text-[10px] font-bold text-rose-600 uppercase">Out of stock</span>
-                            ) : isLow ? (
-                              <span className="text-[10px] font-bold text-amber-600 uppercase">Low alert</span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-emerald-600 uppercase">Available</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => onOpenRestock(product.ProductCode, v.Size, v.Color)}
-                                title="Add stock for this size/color"
-                                className="p-1 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
+                        return (
+                          <tr key={v.VariantID} className="hover:bg-stone-50/70">
+                            <td className="py-2.5 px-3 font-mono font-bold text-stone-900">
+                              <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-800 border border-stone-200">
+                                {v.Size}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className="inline-flex items-center gap-1.5 font-medium text-stone-800">
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full border border-stone-300"
+                                  style={{
+                                    backgroundColor:
+                                      colors.find((c) => c.ColorName.toLowerCase() === v.Color.toLowerCase())?.HexCode ||
+                                      v.Color.toLowerCase(),
+                                  }}
+                                />
+                                {v.Color}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono-numbers text-stone-600">
+                              ${v.ActualPrice.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono-numbers font-bold text-stone-900">
+                              ${v.SellingPrice.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono-numbers text-stone-500">
+                              {v.MinimumStock}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span
+                                className={`font-mono-numbers font-bold px-2 py-0.5 rounded text-[11px] ${
+                                  isOut
+                                    ? 'bg-rose-100 text-rose-800 font-bold'
+                                    : isLow
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-50 text-emerald-800'
+                                }`}
                               >
-                                <ArrowDownToLine className="w-3.5 h-3.5" />
-                              </button>
-                              {isAdmin && (
-                                <button
-                                  onClick={() => setEditingVariant(v)}
-                                  title="Edit variant prices & adjust stock count"
-                                  className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
+                                {v.CurrentStock}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              {isOut ? (
+                                <span className="text-[10px] font-bold text-rose-600 uppercase">Out of stock</span>
+                              ) : isLow ? (
+                                <span className="text-[10px] font-bold text-amber-600 uppercase">Low alert</span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-emerald-600 uppercase">Available</span>
                               )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => onOpenRestock(product.ProductCode, v.Size, v.Color)}
+                                  title="Add stock for this size/color"
+                                  className="p-1 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
+                                >
+                                  <ArrowDownToLine className="w-3.5 h-3.5" />
+                                </button>
+                                {isAdmin && (
+                                  <button
+                                    onClick={() => setEditingVariant(v)}
+                                    title="Edit variant prices & adjust stock count"
+                                    className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>

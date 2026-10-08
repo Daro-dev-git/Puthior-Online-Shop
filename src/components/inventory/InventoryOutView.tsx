@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
+import { InventoryTransaction } from '../../types';
+import { EditTransactionModal } from './EditTransactionModal';
 import {
   ArrowUpFromLine,
   AlertTriangle,
@@ -7,6 +9,7 @@ import {
   CheckCircle2,
   HelpCircle,
   Shirt,
+  Edit2,
 } from 'lucide-react';
 
 export const InventoryOutView: React.FC = () => {
@@ -18,8 +21,11 @@ export const InventoryOutView: React.FC = () => {
     getProductByCode,
     issueStock,
     transactions,
+    isAdmin,
     showToast,
   } = useStore();
+
+  const [editingTransaction, setEditingTransaction] = useState<InventoryTransaction | null>(null);
 
   const [productCode, setProductCode] = useState<string>('GD001');
   const [size, setSize] = useState<string>('');
@@ -197,11 +203,13 @@ export const InventoryOutView: React.FC = () => {
                 onChange={(e) => setProductCode(e.target.value)}
                 className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono font-bold focus:bg-white focus:ring-1 focus:ring-rose-500"
               >
-                {products.map((p) => (
-                  <option key={p.ProductID} value={p.ProductCode}>
-                    {p.ProductCode} — {p.ProductName}
-                  </option>
-                ))}
+                {[...products]
+                  .sort((a, b) => a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' }))
+                  .map((p) => (
+                    <option key={p.ProductID} value={p.ProductCode}>
+                      {p.ProductCode} — {p.ProductName}
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -350,9 +358,21 @@ export const InventoryOutView: React.FC = () => {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-stone-900">{tx.ProductName}</span>
-                    <span className="font-mono-numbers font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded">
-                      -{tx.Quantity} OUT
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono-numbers font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded">
+                        -{tx.Quantity} OUT
+                      </span>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingTransaction(tx)}
+                          className="p-1 text-stone-400 hover:text-rose-600 hover:bg-stone-200/60 rounded cursor-pointer transition-colors"
+                          title="Edit movement & recalculate stock"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between text-stone-500 font-mono text-[11px]">
                     <span>
@@ -373,6 +393,14 @@ export const InventoryOutView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Edit Inventory Movement Modal */}
+      {editingTransaction && (
+        <EditTransactionModal
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+        />
+      )}
     </div>
   );
 };

@@ -117,13 +117,15 @@ export const PosSalesView: React.FC = () => {
     return getProductByCode(selectedProductCode);
   }, [selectedProductCode, products, getProductByCode]);
 
-  // Filtered product codes list
+  // Filtered product codes list - ordered by Product Code
   const filteredProductList = useMemo(() => {
-    return products.filter((p) => {
-      if (!productSearch.trim()) return true;
-      const q = productSearch.toLowerCase();
-      return p.ProductCode.toLowerCase().includes(q) || p.ProductName.toLowerCase().includes(q);
-    });
+    return products
+      .filter((p) => {
+        if (!productSearch.trim()) return true;
+        const q = productSearch.toLowerCase();
+        return p.ProductCode.toLowerCase().includes(q) || p.ProductName.toLowerCase().includes(q);
+      })
+      .sort((a, b) => a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' }));
   }, [products, productSearch]);
 
   // Add Item to Sale Cart

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { ProductVariant } from '../../types';
+import { compareSizes } from '../../utils/sizeUtils';
 import { X, Save, Trash2, ArrowUpDown, Check, AlertCircle, ShieldCheck } from 'lucide-react';
 
 interface VariantEditModalProps {
@@ -13,16 +14,20 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
   const { sizes, colors, updateVariant, adjustVariantStock, deleteVariantFromProduct, isAdmin, showToast } =
     useStore();
 
+  const sortedSizes = useMemo(() => {
+    return [...sizes].sort((a, b) => compareSizes(a.SizeValue, b.SizeValue));
+  }, [sizes]);
+
   // Variant field states
   const [size, setSize] = useState(variant.Size);
   const [color, setColor] = useState(variant.Color);
-  const [actualPrice, setActualPrice] = useState(variant.ActualPrice);
-  const [sellingPrice, setSellingPrice] = useState(variant.SellingPrice);
-  const [minStock, setMinStock] = useState(variant.MinimumStock);
+  const [actualPrice, setActualPrice] = useState<number | string>(variant.ActualPrice);
+  const [sellingPrice, setSellingPrice] = useState<number | string>(variant.SellingPrice);
+  const [minStock, setMinStock] = useState<number | string>(variant.MinimumStock);
   const [status, setStatus] = useState<'active' | 'inactive'>(variant.Status);
 
   // Stock Adjustment state
-  const [adjustedStock, setAdjustedStock] = useState(variant.CurrentStock);
+  const [adjustedStock, setAdjustedStock] = useState<number | string>(variant.CurrentStock);
   const [adjustmentReason, setAdjustmentReason] = useState(
     'Inventory count correction / physical audit'
   );
@@ -30,35 +35,39 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
-  const stockDiff = adjustedStock - variant.CurrentStock;
+  const numActualPrice = actualPrice !== '' && !isNaN(Number(actualPrice)) ? Math.max(0, Number(actualPrice)) : variant.ActualPrice;
+  const numSellingPrice = sellingPrice !== '' && !isNaN(Number(sellingPrice)) ? Math.max(0, Number(sellingPrice)) : variant.SellingPrice;
+  const numAdjustedStock = adjustedStock !== '' && !isNaN(Number(adjustedStock)) ? Math.max(0, Number(adjustedStock)) : variant.CurrentStock;
+  const stockDiff = numAdjustedStock - variant.CurrentStock;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     try {
-      // 1. Update basic variant attributes
+      // 1. Prepare updated variant attributes with all user edits (actual price, selling price, etc.)
       const updatedVariant: ProductVariant = {
         ...variant,
         Size: size.trim(),
         Color: color.trim(),
-        ActualPrice: actualPrice,
-        SellingPrice: sellingPrice,
-        MinimumStock: minStock,
+        ActualPrice: numActualPrice,
+        SellingPrice: numSellingPrice,
+        MinimumStock: Number(minStock) >= 0 ? Number(minStock) : 0,
         Status: status,
       };
 
-      const res = updateVariant(productId, updatedVariant);
+      // 2. Prepare stock adjustment if quantity was changed (e.g. deduct or add units)
+      const stockAdjustment = stockDiff !== 0 ? {
+        newStock: Math.max(0, numAdjustedStock),
+        reason: customReason.trim() || adjustmentReason,
+      } : undefined;
+
+      // 3. Atomically update in a single call - prevents rollback of actual price!
+      const res = updateVariant(productId, updatedVariant, stockAdjustment);
       if (!res.success) {
         showToast(res.error || 'Failed to update variant', 'error');
         setIsSubmitting(false);
         return;
-      }
-
-      // 2. If stock was adjusted, record stock adjustment
-      if (stockDiff !== 0) {
-        const reason = customReason.trim() || adjustmentReason;
-        adjustVariantStock(productId, variant.VariantID, adjustedStock, reason);
       }
 
       onClose();
@@ -116,9 +125,9 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
                 onChange={(e) => setSize(e.target.value)}
                 className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers focus:bg-white"
               >
-                {sizes.map((s) => (
+                {sortedSizes.map((s) => (
                   <option key={s.SizeID} value={s.SizeValue}>
-                    {s.SizeValue}
+                    Size {s.SizeValue}
                   </option>
                 ))}
               </select>
@@ -154,7 +163,7 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
                     step="0.25"
                     min="0"
                     value={actualPrice}
-                    onChange={(e) => setActualPrice(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setActualPrice(e.target.value)}
                     className="w-full pl-6 pr-2 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers focus:bg-white"
                   />
                 </div>
@@ -172,7 +181,7 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
                   step="0.25"
                   min="0"
                   value={sellingPrice}
-                  onChange={(e) => setSellingPrice(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setSellingPrice(e.target.value)}
                   className="w-full pl-6 pr-2 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers font-semibold focus:bg-white"
                 />
               </div>
@@ -184,7 +193,7 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
                 type="number"
                 min="0"
                 value={minStock}
-                onChange={(e) => setMinStock(parseInt(e.target.value, 10) || 0)}
+                onChange={(e) => setMinStock(e.target.value)}
                 className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers focus:bg-white"
               />
             </div>
@@ -195,8 +204,8 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
             <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between text-xs text-emerald-800 font-medium">
               <span>Unit Profit Margin:</span>
               <span className="font-bold">
-                +${(sellingPrice - actualPrice).toFixed(2)} (
-                {actualPrice > 0 ? (((sellingPrice - actualPrice) / actualPrice) * 100).toFixed(1) : 0}%)
+                +${(numSellingPrice - numActualPrice).toFixed(2)} (
+                {numActualPrice > 0 ? (((numSellingPrice - numActualPrice) / numActualPrice) * 100).toFixed(1) : 0}%)
               </span>
             </div>
           )}
@@ -223,15 +232,51 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
                     type="number"
                     min="0"
                     value={adjustedStock}
-                    onChange={(e) => setAdjustedStock(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => setAdjustedStock(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-xs font-mono-numbers font-bold text-stone-900 focus:ring-2 focus:ring-rose-500"
                   />
+                  {/* Quick adjustment buttons */}
+                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                    <span className="text-[10px] text-stone-400 font-medium mr-0.5">Quick:</span>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustedStock(Math.max(0, numAdjustedStock - 5))}
+                      className="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-rose-50 hover:text-rose-700 border border-stone-200 text-[10px] font-bold text-stone-600 cursor-pointer"
+                      title="Deduct 5 units"
+                    >
+                      -5
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustedStock(Math.max(0, numAdjustedStock - 1))}
+                      className="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-rose-50 hover:text-rose-700 border border-stone-200 text-[10px] font-bold text-stone-600 cursor-pointer"
+                      title="Deduct 1 unit"
+                    >
+                      -1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustedStock(numAdjustedStock + 1)}
+                      className="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-emerald-50 hover:text-emerald-700 border border-stone-200 text-[10px] font-bold text-stone-600 cursor-pointer"
+                      title="Add 1 unit"
+                    >
+                      +1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustedStock(numAdjustedStock + 5)}
+                      className="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-emerald-50 hover:text-emerald-700 border border-stone-200 text-[10px] font-bold text-stone-600 cursor-pointer"
+                      title="Add 5 units"
+                    >
+                      +5
+                    </button>
+                  </div>
                 </div>
 
-                <div className="text-[11px] p-2 rounded bg-white border border-stone-200">
-                  <span className="text-stone-500 block">Inventory Difference:</span>
+                <div className="text-[11px] p-2.5 rounded-lg bg-white border border-stone-200">
+                  <span className="text-stone-500 block mb-0.5">Inventory Difference:</span>
                   <span
-                    className={`font-mono-numbers font-bold text-sm ${
+                    className={`font-mono-numbers font-bold text-sm block ${
                       stockDiff > 0
                         ? 'text-emerald-600'
                         : stockDiff < 0
@@ -239,8 +284,17 @@ export const VariantEditModal: React.FC<VariantEditModalProps> = ({ productId, v
                         : 'text-stone-500'
                     }`}
                   >
-                    {stockDiff > 0 ? `+${stockDiff} units (IN)` : stockDiff < 0 ? `${stockDiff} units (OUT)` : 'No stock change'}
+                    {stockDiff > 0
+                      ? `+${stockDiff} units (Stock IN)`
+                      : stockDiff < 0
+                      ? `${stockDiff} units (Deduct OUT)`
+                      : 'No stock change (0)'}
                   </span>
+                  {stockDiff !== 0 && (
+                    <span className="text-[10px] text-stone-400 mt-1 block">
+                      Will record an automatic {stockDiff < 0 ? 'Adjustment OUT' : 'Adjustment IN'} transaction
+                    </span>
+                  )}
                 </div>
               </div>
 

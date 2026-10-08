@@ -929,6 +929,15 @@ export async function saveOrderToFirestore(order: Order): Promise<void> {
   }
 }
 
+export async function deleteOrderFromFirestore(orderId: string): Promise<void> {
+  const path = `${COLLECTIONS.ORDERS}/${orderId}`;
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.ORDERS, orderId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+  }
+}
+
 export async function saveTransactionToFirestore(tx: InventoryTransaction): Promise<void> {
   const path = `${COLLECTIONS.TRANSACTIONS}/${tx.TransactionID}`;
   const payload = {
@@ -939,6 +948,15 @@ export async function saveTransactionToFirestore(tx: InventoryTransaction): Prom
     await setDoc(doc(db, COLLECTIONS.TRANSACTIONS, tx.TransactionID), sanitizeForFirestore(payload));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteTransactionFromFirestore(transactionId: string): Promise<void> {
+  const path = `${COLLECTIONS.TRANSACTIONS}/${transactionId}`;
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.TRANSACTIONS, transactionId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
   }
 }
 

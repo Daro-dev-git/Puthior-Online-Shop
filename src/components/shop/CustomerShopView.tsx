@@ -83,7 +83,7 @@ export const CustomerShopView: React.FC = () => {
       }
 
       return true;
-    });
+    }).sort((a, b) => a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' }));
   }, [products, selectedType, selectedPriceCat, searchQuery, priceCategories]);
 
   // Open Product Modal

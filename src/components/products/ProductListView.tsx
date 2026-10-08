@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { EditProductModal } from './EditProductModal';
+import { compareSizes } from '../../utils/sizeUtils';
 import {
   Search,
   Plus,
@@ -16,6 +17,9 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 
 interface ProductListViewProps {
@@ -42,12 +46,13 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [productToDelete, setProductToDelete] = useState<{ id: string; code: string; name: string } | null>(null);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'code_asc' | 'code_desc' | 'name_asc' | 'stock_desc' | 'stock_asc'>('code_asc');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(20);
 
-  // Filtered Products
+  // Filtered Products - ordered by Product Code by default
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    const list = products.filter((p) => {
       // Dress Type filter
       if (selectedType !== 'all' && p.DressTypeID !== selectedType) {
         return false;
@@ -93,7 +98,30 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
 
       return true;
     });
-  }, [products, searchQuery, selectedType, selectedPriceCat, selectedStockFilter, priceCategories, getDressTypeName]);
+
+    return list.sort((a, b) => {
+      if (sortBy === 'code_asc') {
+        return a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (sortBy === 'code_desc') {
+        return b.ProductCode.localeCompare(a.ProductCode, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (sortBy === 'name_asc') {
+        return a.ProductName.localeCompare(b.ProductName, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (sortBy === 'stock_desc') {
+        const stockA = a.Variants.reduce((s, v) => s + v.CurrentStock, 0);
+        const stockB = b.Variants.reduce((s, v) => s + v.CurrentStock, 0);
+        return stockB - stockA;
+      }
+      if (sortBy === 'stock_asc') {
+        const stockA = a.Variants.reduce((s, v) => s + v.CurrentStock, 0);
+        const stockB = b.Variants.reduce((s, v) => s + v.CurrentStock, 0);
+        return stockA - stockB;
+      }
+      return a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [products, searchQuery, selectedType, selectedPriceCat, selectedStockFilter, sortBy, priceCategories, getDressTypeName]);
 
   // Reset to page 1 on filter or search changes
   React.useEffect(() => {
@@ -151,7 +179,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
       <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           {/* Search Box */}
-          <div className="md:col-span-4 relative">
+          <div className="md:col-span-3 relative">
             <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
             <input
               type="text"
@@ -179,7 +207,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
           </div>
 
           {/* Price Category Filter */}
-          <div className="md:col-span-3">
+          <div className="md:col-span-2">
             <select
               value={selectedPriceCat}
               onChange={(e) => setSelectedPriceCat(e.target.value)}
@@ -194,8 +222,24 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
             </select>
           </div>
 
+          {/* Order / Sort Selector (Requirement #1: View order by Product Code) */}
+          <div className="md:col-span-3">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="w-full px-3 py-2 bg-rose-50/50 border border-rose-200 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-rose-500 focus:bg-white cursor-pointer text-rose-950"
+              title="Order products by Product Code, Name, or Stock"
+            >
+              <option value="code_asc">Order by Product Code (A → Z)</option>
+              <option value="code_desc">Order by Product Code (Z → A)</option>
+              <option value="name_asc">Order by Product Name (A → Z)</option>
+              <option value="stock_desc">Order by Total Stock (High → Low)</option>
+              <option value="stock_asc">Order by Total Stock (Low → High)</option>
+            </select>
+          </div>
+
           {/* View Mode Switcher */}
-          <div className="md:col-span-2 flex items-center justify-end gap-1">
+          <div className="md:col-span-1 flex items-center justify-end">
             <div className="bg-stone-100 p-1 rounded-lg flex items-center gap-1 border border-stone-200">
               <button
                 onClick={() => setViewMode('grid')}
@@ -301,7 +345,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
             const priceLabel =
               minPrice === maxPrice ? `$${minPrice.toFixed(2)}` : `$${minPrice.toFixed(2)} – $${maxPrice.toFixed(2)}`;
 
-            const distinctSizes = Array.from(new Set(product.Variants.map((v) => v.Size)));
+            const distinctSizes = Array.from(new Set(product.Variants.map((v) => v.Size))).sort(compareSizes);
             const distinctColors = Array.from(new Set(product.Variants.map((v) => v.Color)));
             const isOutOfStock = totalStock === 0;
             const isLowStock = product.Variants.some((v) => v.CurrentStock <= v.MinimumStock && v.CurrentStock > 0);
@@ -444,7 +488,22 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
             <table className="w-full text-xs text-left">
               <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold">
                 <tr>
-                  <th className="py-3 px-4">Code</th>
+                  <th
+                    className="py-3 px-4 cursor-pointer hover:bg-stone-100 transition-colors select-none group"
+                    onClick={() => setSortBy((prev) => (prev === 'code_asc' ? 'code_desc' : 'code_asc'))}
+                    title="Click to toggle order by Product Code"
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-rose-800">
+                      <span>Code</span>
+                      {sortBy === 'code_asc' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-rose-600" />
+                      ) : sortBy === 'code_desc' ? (
+                        <ArrowDown className="w-3.5 h-3.5 text-rose-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-stone-400 group-hover:text-rose-600" />
+                      )}
+                    </div>
+                  </th>
                   <th className="py-3 px-4">Product Name</th>
                   <th className="py-3 px-4">Type</th>
                   <th className="py-3 px-4">Brand</th>
@@ -462,7 +521,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
                   const totalStock = p.Variants.reduce((s, v) => s + v.CurrentStock, 0);
                   const minPrice = Math.min(...p.Variants.map((v) => v.SellingPrice));
                   const maxPrice = Math.max(...p.Variants.map((v) => v.SellingPrice));
-                  const distinctSizes = Array.from(new Set(p.Variants.map((v) => v.Size)));
+                  const distinctSizes = Array.from(new Set(p.Variants.map((v) => v.Size))).sort(compareSizes);
                   const distinctColors = Array.from(new Set(p.Variants.map((v) => v.Color)));
 
                   return (
