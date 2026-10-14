@@ -39,15 +39,26 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
   const [images, setImages] = useState<ProductImage[]>(product?.Images ? [...product.Images] : []);
 
   // Variant editing (prices, quantities, stock thresholds)
-  const [variants, setVariants] = useState<ProductVariant[]>(() =>
-    product?.Variants ? product.Variants.map((v) => ({ ...v })) : []
-  );
+  const [variants, setVariants] = useState<ProductVariant[]>(() => {
+    if (!product?.Variants) return [];
+    return product.Variants.map((v, i) => ({
+      ...v,
+      VariantID: v.VariantID || `var-${product.ProductID}-${v.Size}-${v.Color}-${i}`,
+      ActualPrice: Number(v.ActualPrice ?? (v as any).actualPrice ?? 0),
+      SellingPrice: Number(v.SellingPrice ?? (v as any).sellingPrice ?? 0),
+      CurrentStock: Math.max(0, Number(v.CurrentStock ?? (v as any).currentStock ?? 0)),
+      MinimumStock: Math.max(0, Number(v.MinimumStock ?? (v as any).minimumStock ?? 5)),
+    }));
+  });
 
   // Keep reference of original variants to display stock adjustment deltas
   const originalVariants = useMemo(() => {
     const map = new Map<string, ProductVariant>();
     if (product?.Variants) {
-      product.Variants.forEach((v) => map.set(v.VariantID, { ...v }));
+      product.Variants.forEach((v, i) => {
+        const id = v.VariantID || `var-${product.ProductID}-${v.Size}-${v.Color}-${i}`;
+        map.set(id, { ...v, VariantID: id });
+      });
     }
     return map;
   }, [product]);
@@ -149,10 +160,19 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
   const handleVariantFieldChange = (
     variantId: string,
     field: 'SellingPrice' | 'ActualPrice' | 'CurrentStock' | 'MinimumStock',
-    val: number
+    val: number | string
   ) => {
     setVariants((prev) =>
-      prev.map((v) => (v.VariantID === variantId ? { ...v, [field]: Math.max(0, val) } : v))
+      prev.map((v) => {
+        if (v.VariantID !== variantId) return v;
+        const numVal =
+          typeof val === 'number'
+            ? Math.max(0, val)
+            : val === ''
+            ? 0
+            : Math.max(0, parseFloat(val) || 0);
+        return { ...v, [field]: numVal };
+      })
     );
   };
 
@@ -553,12 +573,12 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
 
             {/* Bulk Adjustment Toolbar */}
             {showBulkTools && (
-              <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-2.5 animate-fadeIn text-xs">
+              <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 space-y-3 animate-fadeIn text-xs">
                 <div className="flex items-center justify-between text-[11px] font-bold text-stone-700">
                   <span>Bulk Apply to All Variants</span>
-                  <span className="text-[10px] text-stone-400 font-normal">Apply values in one click across all sizes/colors</span>
+                  <span className="text-[10px] text-stone-400 font-normal">Simultaneously update wholesale cost, retail price, or deduct/add stock across all sizes</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[11px] text-stone-600 font-medium">Cost $:</span>
                     <input
@@ -568,12 +588,12 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                       placeholder="e.g. 18.00"
                       value={bulkCost}
                       onChange={(e) => setBulkCost(e.target.value)}
-                      className="w-24 px-2 py-1 bg-white border border-stone-300 rounded text-xs font-mono-numbers"
+                      className="w-22 px-2 py-1 bg-white border border-stone-300 rounded text-xs font-mono-numbers"
                     />
                     <button
                       type="button"
                       onClick={handleApplyBulkCost}
-                      className="px-2 py-1 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded font-semibold text-[11px] cursor-pointer"
+                      className="px-2.5 py-1 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded font-semibold text-[11px] cursor-pointer"
                     >
                       Apply
                     </button>
@@ -588,23 +608,32 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                       placeholder="e.g. 38.00"
                       value={bulkSelling}
                       onChange={(e) => setBulkSelling(e.target.value)}
-                      className="w-24 px-2 py-1 bg-white border border-stone-300 rounded text-xs font-mono-numbers"
+                      className="w-22 px-2 py-1 bg-white border border-stone-300 rounded text-xs font-mono-numbers"
                     />
                     <button
                       type="button"
                       onClick={handleApplyBulkSelling}
-                      className="px-2 py-1 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded font-semibold text-[11px] cursor-pointer"
+                      className="px-2.5 py-1 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded font-semibold text-[11px] cursor-pointer"
                     >
                       Apply
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[11px] text-stone-600 font-medium">Stock:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkStockDelta(-5)}
+                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded font-semibold text-[11px] cursor-pointer"
+                      title="Deduct 5 units across all variants"
+                    >
+                      -5 All
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleBulkStockDelta(-1)}
                       className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded font-semibold text-[11px] cursor-pointer"
+                      title="Deduct 1 unit across all variants"
                     >
                       -1 All
                     </button>
@@ -612,6 +641,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                       type="button"
                       onClick={() => handleBulkStockDelta(1)}
                       className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-semibold text-[11px] cursor-pointer"
+                      title="Add 1 unit across all variants"
                     >
                       +1 All
                     </button>
@@ -619,6 +649,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                       type="button"
                       onClick={() => handleBulkStockDelta(5)}
                       className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-semibold text-[11px] cursor-pointer"
+                      title="Add 5 units across all variants"
                     >
                       +5 All
                     </button>
@@ -628,13 +659,13 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
             )}
 
             {/* Variants Multi-Item Table */}
-            <div className="max-h-60 overflow-y-auto rounded-xl border border-stone-200 overflow-hidden shadow-2xs">
+            <div className="max-h-72 overflow-y-auto rounded-xl border border-stone-200 overflow-hidden shadow-2xs">
               <table className="w-full text-xs text-left">
                 <thead className="bg-stone-50 border-b border-stone-200 text-stone-600 font-semibold sticky top-0 z-10">
                   <tr>
                     <th className="py-2.5 px-3">Size (Order by #)</th>
                     <th className="py-2.5 px-3">Color</th>
-                    <th className="py-2.5 px-3 text-center">Stock (Qty)</th>
+                    <th className="py-2.5 px-3 text-center">Stock & Deductions (Qty)</th>
                     <th className="py-2.5 px-3">Cost Basis ($)</th>
                     <th className="py-2.5 px-3">Selling Price ($)</th>
                     <th className="py-2.5 px-3 text-right">Unit Margin</th>
@@ -657,20 +688,38 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
 
                       return (
                         <tr key={v.VariantID} className="hover:bg-rose-50/30 transition-colors">
-                          <td className="py-2 px-3 font-semibold text-stone-900 font-mono-numbers">
-                            <span className="px-1.5 py-0.5 rounded bg-stone-100 border border-stone-200">
+                          <td className="py-2.5 px-3 font-semibold text-stone-900 font-mono-numbers">
+                            <span className="px-2 py-0.5 rounded bg-stone-100 border border-stone-200">
                               {v.Size}
                             </span>
                           </td>
-                          <td className="py-2 px-3 text-stone-700 font-medium">{v.Color}</td>
+                          <td className="py-2.5 px-3 text-stone-700 font-medium">{v.Color}</td>
 
-                          {/* Editable Stock Quantity with Quick Increment / Decrement */}
-                          <td className="py-2 px-3 text-center">
+                          {/* Editable Stock Quantity with Quick Deduct & Increment buttons */}
+                          <td className="py-2.5 px-3 text-center">
                             <div className="inline-flex items-center gap-1">
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleVariantFieldChange(v.VariantID, 'CurrentStock', Math.max(0, v.CurrentStock - 1))
+                                  handleVariantFieldChange(
+                                    v.VariantID,
+                                    'CurrentStock',
+                                    Math.max(0, v.CurrentStock - 5)
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold cursor-pointer text-[10px]"
+                                title="Deduct 5 units"
+                              >
+                                -5
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleVariantFieldChange(
+                                    v.VariantID,
+                                    'CurrentStock',
+                                    Math.max(0, v.CurrentStock - 1)
+                                  )
                                 }
                                 className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center cursor-pointer text-xs"
                                 title="Deduct 1 unit"
@@ -700,58 +749,68 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                               >
                                 +
                               </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleVariantFieldChange(v.VariantID, 'CurrentStock', v.CurrentStock + 5)
+                                }
+                                className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold cursor-pointer text-[10px]"
+                                title="Add 5 units"
+                              >
+                                +5
+                              </button>
 
                               {/* Delta visual indicator */}
                               {stockDiff !== 0 && (
                                 <span
-                                  className={`px-1 py-0.2 rounded text-[10px] font-mono-numbers font-bold ${
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono-numbers font-bold ${
                                     stockDiff > 0
                                       ? 'bg-emerald-100 text-emerald-800'
                                       : 'bg-rose-100 text-rose-800'
                                   }`}
                                   title={`Original was ${origStock} units`}
                                 >
-                                  {stockDiff > 0 ? `+${stockDiff}` : stockDiff}
+                                  {stockDiff > 0 ? `+${stockDiff}` : `Deduct ${Math.abs(stockDiff)}`}
                                 </span>
                               )}
                             </div>
                           </td>
 
                           {/* Editable Cost Price (ActualPrice) */}
-                          <td className="py-2 px-3">
+                          <td className="py-2.5 px-3">
                             <div className="relative">
                               <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-stone-400 text-[11px]">$</span>
                               <input
                                 type="number"
-                                step="0.25"
+                                step="0.01"
                                 min="0"
                                 value={v.ActualPrice}
                                 onChange={(e) =>
                                   handleVariantFieldChange(
                                     v.VariantID,
                                     'ActualPrice',
-                                    Math.max(0, parseFloat(e.target.value) || 0)
+                                    e.target.value
                                   )
                                 }
-                                className="w-22 pl-5 pr-1.5 py-1 bg-stone-50 border border-stone-200 rounded text-xs text-stone-700 focus:bg-white focus:ring-1 focus:ring-rose-500 font-mono-numbers"
+                                className="w-22 pl-5 pr-1.5 py-1 bg-stone-50 border border-stone-200 rounded text-xs text-stone-700 focus:bg-white focus:ring-1 focus:ring-rose-500 font-mono-numbers font-medium"
                               />
                             </div>
                           </td>
 
                           {/* Editable Selling Price (SellingPrice) */}
-                          <td className="py-2 px-3">
+                          <td className="py-2.5 px-3">
                             <div className="relative">
                               <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-rose-400 text-[11px]">$</span>
                               <input
                                 type="number"
-                                step="0.25"
+                                step="0.01"
                                 min="0"
                                 value={v.SellingPrice}
                                 onChange={(e) =>
                                   handleVariantFieldChange(
                                     v.VariantID,
                                     'SellingPrice',
-                                    Math.max(0, parseFloat(e.target.value) || 0)
+                                    e.target.value
                                   )
                                 }
                                 className="w-22 pl-5 pr-1.5 py-1 bg-stone-50 border border-stone-200 rounded text-xs font-bold text-rose-700 focus:bg-white focus:ring-1 focus:ring-rose-500 font-mono-numbers"
@@ -760,7 +819,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                           </td>
 
                           {/* Real-time Profit Preview */}
-                          <td className="py-2 px-3 text-right font-mono-numbers">
+                          <td className="py-2.5 px-3 text-right font-mono-numbers">
                             <span className="text-emerald-700 font-semibold text-[11px]">
                               +${profit.toFixed(2)}
                             </span>

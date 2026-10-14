@@ -97,7 +97,7 @@ export const LoginScreen: React.FC = () => {
                     setUserNumber(e.target.value);
                     if (errorMsg) setErrorMsg(null);
                   }}
-                  placeholder="Enter User Number or ID"
+                  placeholder="User Number, Staff ID, or Email (e.g. 1001)"
                   className="w-full pl-10 pr-4 py-2.5 bg-stone-900/80 border border-stone-700 rounded-xl text-white placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all font-mono-numbers text-sm"
                   autoFocus
                   required
@@ -140,8 +140,17 @@ export const LoginScreen: React.FC = () => {
               disabled={isSubmitting}
               className="w-full mt-5 py-3 px-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-500 hover:to-rose-400 text-white font-medium rounded-xl shadow-lg shadow-pink-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 text-sm"
             >
-              <span>{isSubmitting ? 'Validating Credentials...' : 'Sign In'}</span>
-              <ArrowRight className="w-4 h-4" />
+              {isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Validating Credentials...</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign In</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 

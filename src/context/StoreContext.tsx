@@ -54,6 +54,7 @@ import {
   saveSettingsToFirestore,
   saveUserToFirestore,
   deleteUserFromFirestore,
+  fetchAllUsersDirectly,
 } from '../firebase/firestoreService';
 import { subscribeQuotaStatus, FIRESTORE_UPGRADE_URL } from '../firebase/config';
 import { isValidEmail, normalizeEmail } from '../utils/validators';
@@ -426,17 +427,46 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           setProducts((prev) => {
             // Protect against Firestore snapshot rolling back recently updated products with newer local timestamp
             const merged = [...prev];
-            list.forEach((incoming) => {
+            list.forEach((incomingRaw) => {
+              // Normalize incoming product variants so no case discrepancy (actualPrice vs ActualPrice) can zero or revert prices
+              const incoming: Product = {
+                ...incomingRaw,
+                Variants: (incomingRaw.Variants || []).map((iv) => ({
+                  ...iv,
+                  ActualPrice: Number(iv.ActualPrice ?? (iv as any).actualPrice ?? (iv as any).costPrice ?? 0),
+                  SellingPrice: Number(iv.SellingPrice ?? (iv as any).sellingPrice ?? 0),
+                  CurrentStock: Math.max(0, Number(iv.CurrentStock ?? (iv as any).currentStock ?? 0)),
+                  MinimumStock: Math.max(0, Number(iv.MinimumStock ?? (iv as any).minimumStock ?? 5)),
+                })),
+              };
+
               const idx = merged.findIndex((p) => p.ProductID === incoming.ProductID);
               if (idx >= 0) {
                 const current = merged[idx];
-                // Only replace if incoming from Firestore is newer or current has no ModifiedDate
-                if (
-                  !current.ModifiedDate ||
-                  !incoming.ModifiedDate ||
-                  new Date(incoming.ModifiedDate).getTime() >= new Date(current.ModifiedDate).getTime()
-                ) {
+                const currentMod = current.ModifiedDate ? new Date(current.ModifiedDate).getTime() : 0;
+                const incomingMod = incoming.ModifiedDate ? new Date(incoming.ModifiedDate).getTime() : 0;
+
+                // Only replace if incoming from Firestore is strictly newer
+                if (!currentMod || (incomingMod > 0 && incomingMod > currentMod)) {
                   merged[idx] = incoming;
+                } else if (incomingMod === currentMod) {
+                  // If timestamps are identical, preserve updated local variant fields to eliminate auto rollback
+                  const mergedVariants = (incoming.Variants || []).map((inVar) => {
+                    const curVar = (current.Variants || []).find(
+                      (cv) =>
+                        cv.VariantID === inVar.VariantID ||
+                        (cv.Size === inVar.Size && cv.Color === inVar.Color)
+                    );
+                    return curVar
+                      ? {
+                          ...inVar,
+                          ActualPrice: curVar.ActualPrice,
+                          SellingPrice: curVar.SellingPrice,
+                          CurrentStock: curVar.CurrentStock,
+                        }
+                      : inVar;
+                  });
+                  merged[idx] = { ...current, ...incoming, Variants: mergedVariants };
                 }
               } else {
                 merged.push(incoming);
@@ -538,7 +568,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, []);
 
-  // Login handler with user number & password validation
+  // Login handler with robust user ID / number / email & password validation (succeeds reliably on 1st attempt)
   const loginWithNumber = async (
     userNumber: string,
     pass: string
@@ -546,26 +576,69 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const cleanNum = userNumber.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    // Check user list (or fallback initial users)
-    const activeList = users.length > 0 ? users : INITIAL_USERS;
-    const userExists = activeList.find(
-      (u) =>
-        u.userNumber.toLowerCase() === cleanNum ||
-        u.userId.toLowerCase() === cleanNum ||
+    // 1. Gather all local candidates from current state, cached storage, and initial users
+    let cachedUsers: AppUser[] = [];
+    try {
+      const saved = localStorage.getItem('gds_cached_users');
+      if (saved) cachedUsers = JSON.parse(saved);
+    } catch {}
+
+    const localPool = [...users, ...cachedUsers, ...INITIAL_USERS];
+
+    const matchUser = (u: AppUser) => {
+      const uNum = (u.userNumber || '').trim().toLowerCase();
+      const uId = (u.userId || '').trim().toLowerCase();
+      const uEmail = (u.email || '').trim().toLowerCase();
+      const uName = (u.name || '').trim().toLowerCase();
+      const uPhone = (u.phone || '').trim();
+
+      return (
+        uNum === cleanNum ||
+        uId === cleanNum ||
+        (cleanNum.length >= 3 && uEmail === cleanNum) ||
+        (cleanNum.length >= 2 && uName === cleanNum) ||
+        (cleanNum.length >= 2 && uPhone === cleanNum) ||
         (cleanNum === 'admin' && u.role === 'admin')
-    );
+      );
+    };
+
+    let userExists = localPool.find(matchUser);
+
+    // 2. Check password match (handles both trimmed and raw passwords)
+    const isPasswordMatch = (u: AppUser) => (u.password || '').trim() === cleanPass || u.password === pass;
+
+    // 3. If user is not found locally OR password does not match local cached version,
+    // immediately query Firestore directly so first-attempt login never fails due to async subscription delay!
+    if (!userExists || !isPasswordMatch(userExists)) {
+      try {
+        const freshUsers = await fetchAllUsersDirectly();
+        if (freshUsers.length > 0) {
+          // Update in-memory state and cache with fresh users
+          setUsers(freshUsers);
+          try {
+            localStorage.setItem('gds_cached_users', JSON.stringify(freshUsers));
+          } catch {}
+          const remoteFound = freshUsers.find(matchUser);
+          if (remoteFound) {
+            userExists = remoteFound;
+          }
+        }
+      } catch (err) {
+        console.warn('Direct user lookup fallback failed:', err);
+      }
+    }
 
     if (!userExists) {
       return {
         success: false,
-        error: `User Number "${userNumber}" not found in database. New staff accounts must be created by the Administrator.`,
+        error: `User ID or Number "${userNumber}" not found in database. New staff accounts must be created by the Administrator.`,
       };
     }
 
-    if (userExists.password !== cleanPass) {
+    if (!isPasswordMatch(userExists)) {
       return {
         success: false,
-        error: `Incorrect password for User #${userExists.userNumber}. Please check your password and try again.`,
+        error: `Incorrect password for User #${userExists.userNumber} (${userExists.name}). Please check your password and try again.`,
       };
     }
 
@@ -831,7 +904,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return { success: true };
   };
 
-  // Update Product (Supports multi-item variant adjustments of Cost, Selling, and Qty simultaneously)
+  // Update Product (Supports multi-item variant adjustments of Cost, Selling, and Qty simultaneously without rollback)
   const updateProduct = (product: Product): { success: boolean; error?: string } => {
     const cleanCode = product.ProductCode.trim().toUpperCase();
     const existing = products.find(
@@ -851,30 +924,41 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     let totalAdded = 0;
 
     const updatedVariants = (product.Variants || []).map((v, idx) => {
-      const oldVar = oldVariants.find((ov) => ov.VariantID === v.VariantID);
+      // Robust matching: by VariantID, or by Size + Color pair
+      const oldVar = oldVariants.find(
+        (ov) =>
+          (v.VariantID && ov.VariantID === v.VariantID) ||
+          (ov.Size.trim().toLowerCase() === v.Size.trim().toLowerCase() &&
+           ov.Color.trim().toLowerCase() === v.Color.trim().toLowerCase())
+      );
+
       const oldStock = oldVar ? oldVar.CurrentStock : v.CurrentStock;
       const newStock = Math.max(0, Number(v.CurrentStock) || 0);
       const diff = newStock - oldStock;
 
-      const actPrice = Number(v.ActualPrice) >= 0 ? Number(v.ActualPrice) : (oldVar?.ActualPrice || 0);
-      const sellPrice = Number(v.SellingPrice) >= 0 ? Number(v.SellingPrice) : (oldVar?.SellingPrice || 0);
+      // Extract raw price numbers cleanly - never rollback user input
+      const rawAct = Number(v.ActualPrice);
+      const actPrice = !isNaN(rawAct) && rawAct >= 0 ? rawAct : (oldVar ? oldVar.ActualPrice : 0);
+
+      const rawSell = Number(v.SellingPrice);
+      const sellPrice = !isNaN(rawSell) && rawSell >= 0 ? rawSell : (oldVar ? oldVar.SellingPrice : 0);
 
       if (diff !== 0) {
-        const isPositive = diff > 0;
+        const isDeduction = diff < 0;
         const absQty = Math.abs(diff);
-        const txType: InventoryTransactionType = isPositive ? 'Adjustment IN' : 'Adjustment OUT';
+        const txType: InventoryTransactionType = isDeduction ? 'Adjustment OUT' : 'Adjustment IN';
 
-        if (isPositive) {
-          totalAdded += absQty;
-        } else {
+        if (isDeduction) {
           totalDeducted += absQty;
+        } else {
+          totalAdded += absQty;
         }
 
         const tx: InventoryTransaction = {
           TransactionID: `TX-ADJ-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
           TransactionDate: nowIso,
           TransactionType: txType,
-          VariantID: v.VariantID,
+          VariantID: v.VariantID || oldVar?.VariantID || `var-${product.ProductID}-${idx}`,
           ProductCode: cleanCode,
           ProductName: product.ProductName,
           Size: v.Size.trim(),
@@ -884,7 +968,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           SellingPrice: sellPrice,
           TotalCost: actPrice * absQty,
           TotalSellingValue: sellPrice * absQty,
-          Notes: `Multi-item inventory adjustment by Admin (${oldStock} -> ${newStock} units)`,
+          Notes: isDeduction
+            ? `Multi-item inventory deduction by Admin (${oldStock} -> ${newStock} units, deducted ${absQty})`
+            : `Multi-item inventory adjustment by Admin (${oldStock} -> ${newStock} units, added ${absQty})`,
           CreatedBy: currentUser?.name || 'Administrator',
         };
         stockTransactions.push(tx);
@@ -892,6 +978,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
       return {
         ...v,
+        VariantID: v.VariantID || oldVar?.VariantID || `var-${product.ProductID}-${idx}`,
         ProductCode: cleanCode,
         Size: v.Size.trim(),
         Color: v.Color.trim(),
@@ -917,6 +1004,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       } catch {}
       return next;
     });
+
     saveProductToFirestore(updated).catch(console.error);
 
     if (stockTransactions.length > 0) {

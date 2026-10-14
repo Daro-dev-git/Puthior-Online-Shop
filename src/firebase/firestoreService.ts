@@ -731,6 +731,57 @@ export function subscribeUsers(
 }
 
 /**
+ * Direct user fetching to ensure immediate, robust credential validation
+ * on the very first login attempt without waiting on async network delays.
+ * Checks local persistent cache first (instant 0ms) then server.
+ */
+export async function fetchAllUsersDirectly(): Promise<AppUser[]> {
+  const colRef = collection(db, COLLECTIONS.USERS);
+
+  // 1. Try local cache first for instant 0ms credential verification
+  try {
+    const cacheSnap = await getDocsFromCache(colRef);
+    if (!cacheSnap.empty) {
+      const list: AppUser[] = [];
+      cacheSnap.forEach((d) => list.push(d.data() as AppUser));
+      list.sort((a, b) => (a.userNumber || '').localeCompare(b.userNumber || '', undefined, { numeric: true }));
+      // If cache returned users, also trigger a background refresh
+      getDocs(colRef).catch(() => {});
+      return list;
+    }
+  } catch {
+    // Cache miss or index not yet ready
+  }
+
+  // 2. Fallback to server query with a safety timeout so login never hangs
+  try {
+    const serverPromise = getDocs(colRef);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('User fetch timeout')), 2500)
+    );
+    const snap = await Promise.race([serverPromise, timeoutPromise]);
+    if (!snap.empty) {
+      const list: AppUser[] = [];
+      snap.forEach((d) => list.push(d.data() as AppUser));
+      list.sort((a, b) => (a.userNumber || '').localeCompare(b.userNumber || '', undefined, { numeric: true }));
+      return list;
+    }
+  } catch (err) {
+    console.warn('Could not fetch users directly from server, checking local cache fallback:', err);
+    try {
+      const cacheSnap = await getDocsFromCache(colRef);
+      if (!cacheSnap.empty) {
+        const list: AppUser[] = [];
+        cacheSnap.forEach((d) => list.push(d.data() as AppUser));
+        list.sort((a, b) => (a.userNumber || '').localeCompare(b.userNumber || '', undefined, { numeric: true }));
+        return list;
+      }
+    } catch {}
+  }
+  return [];
+}
+
+/**
  * Helper to fetch documents prioritizing cache first
  */
 export async function getDocsCacheFirst<T>(
@@ -900,8 +951,19 @@ export async function loadSettingsCacheFirst(): Promise<StoreSettings> {
 
 export async function saveProductToFirestore(product: Product): Promise<void> {
   const path = `${COLLECTIONS.PRODUCTS}/${product.ProductID}`;
+  const normalizedProduct: Product = {
+    ...product,
+    Variants: (product.Variants || []).map((v, i) => ({
+      ...v,
+      VariantID: v.VariantID || `var-${product.ProductID}-${i}`,
+      ActualPrice: Number(v.ActualPrice) >= 0 ? Number(v.ActualPrice) : 0,
+      SellingPrice: Number(v.SellingPrice) >= 0 ? Number(v.SellingPrice) : 0,
+      CurrentStock: Math.max(0, Number(v.CurrentStock) || 0),
+      MinimumStock: Math.max(0, Number(v.MinimumStock) || 0),
+    })),
+  };
   try {
-    await setDoc(doc(db, COLLECTIONS.PRODUCTS, product.ProductID), sanitizeForFirestore(product));
+    await setDoc(doc(db, COLLECTIONS.PRODUCTS, product.ProductID), sanitizeForFirestore(normalizedProduct));
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
   }
