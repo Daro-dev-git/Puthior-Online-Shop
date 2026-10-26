@@ -87,12 +87,12 @@ export const DashboardView: React.FC<{
     const dateMap = new Map(list.map((item) => [item.date, item]));
 
     orders.forEach((o) => {
-      const oDate = o.OrderDate.split('T')[0];
+      const oDate = (o.OrderDate || (o as any).createdAt || '').split('T')[0];
       const entry = dateMap.get(oDate);
       if (entry) {
         entry.ordersCount += 1;
-        entry.revenue += o.Total;
-        entry.unitsSold += o.Items.reduce((acc, item) => acc + item.Quantity, 0);
+        entry.revenue += o.Total || 0;
+        entry.unitsSold += (o.Items || []).reduce((acc, item) => acc + (item.Quantity || 0), 0);
       }
     });
 

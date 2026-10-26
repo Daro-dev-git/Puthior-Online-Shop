@@ -43,6 +43,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
   const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null);
   const [showAddVariant, setShowAddVariant] = useState(false);
   const [showEditProductModal, setShowEditProductModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedVariantColor, setSelectedVariantColor] = useState<string>('all');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -211,14 +212,45 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ productI
           </div>
           <div className="flex items-center gap-2">
             {isAdmin && (
-              <button
-                onClick={() => setShowEditProductModal(true)}
-                className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Edit Product Code, Name, Category, Brand, Description"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>Edit Product</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setShowEditProductModal(true)}
+                  className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Edit Product Code, Name, Category, Brand, Description"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit Product</span>
+                </button>
+                {showDeleteConfirm ? (
+                  <div className="flex items-center gap-1 bg-rose-50 border border-rose-300 rounded-lg px-2 py-1 animate-fadeIn">
+                    <span className="text-[11px] font-bold text-rose-800">Delete product?</span>
+                    <button
+                      onClick={() => {
+                        deleteProduct(product.ProductID);
+                        onClose();
+                      }}
+                      className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] cursor-pointer"
+                    >
+                      Yes, Delete
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-1.5 py-0.5 rounded bg-stone-200 hover:bg-stone-300 text-stone-700 text-[10px] cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-2.5 py-1.5 text-xs font-semibold text-stone-600 hover:text-rose-700 bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Permanently Delete this Product and its variants"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                )}
+              </>
             )}
             <button onClick={onClose} className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer">
               <X className="w-5 h-5" />

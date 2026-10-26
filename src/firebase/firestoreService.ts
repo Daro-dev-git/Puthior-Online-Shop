@@ -256,48 +256,89 @@ export async function fetchProductsBatch(
 }
 
 /**
- * Subscribes to orders with cache-first delivery, limit(25) and orderBy("createdAt", "desc")
+ * Subscribes to orders with cache-first delivery and high capacity (default: 2000 items to load full history)
  */
 export function subscribeOrders(
   onData: (orders: Order[]) => void,
   onError?: (err: Error) => void,
-  maxLimit: number = 25
+  maxLimit: number = 2000
 ): Unsubscribe {
   const colRef = collection(db, COLLECTIONS.ORDERS);
-  let q = maxLimit > 0 ? query(colRef, orderBy('createdAt', 'desc'), limit(maxLimit)) : colRef;
+  const q = maxLimit > 0 ? query(colRef, limit(maxLimit)) : colRef;
+
+  const normalizeOrder = (docData: any, id: string): Order => {
+    const orderId = docData.OrderID || id;
+    const orderDate = docData.OrderDate || docData.createdAt || new Date().toISOString();
+    const total = typeof docData.Total === 'number' ? docData.Total : Number(docData.Total) || 0;
+    const cost = typeof docData.Cost === 'number' ? docData.Cost : Number(docData.Cost) || 0;
+    const profit = typeof docData.Profit === 'number' ? docData.Profit : Math.round((total - cost) * 100) / 100;
+    const subtotal = typeof docData.Subtotal === 'number' ? docData.Subtotal : total;
+    const discount = typeof docData.Discount === 'number' ? docData.Discount : 0;
+    const items = Array.isArray(docData.Items)
+      ? docData.Items.map((item: any, idx: number) => {
+          const qty = Number(item.Quantity) || 1;
+          const uPrice = Number(item.UnitPrice) || 0;
+          const aPrice = Number(item.ActualPrice) || 0;
+          const sub = typeof item.Subtotal === 'number' ? item.Subtotal : qty * uPrice;
+          const prof = typeof item.Profit === 'number' ? item.Profit : (uPrice - aPrice) * qty;
+          return {
+            OrderItemID: item.OrderItemID || `item-${orderId}-${idx}`,
+            OrderID: item.OrderID || orderId,
+            VariantID: item.VariantID || '',
+            ProductCode: item.ProductCode || '',
+            ProductName: item.ProductName || '',
+            Size: item.Size || '',
+            Color: item.Color || '',
+            Quantity: qty,
+            UnitPrice: uPrice,
+            ActualPrice: aPrice,
+            Subtotal: sub,
+            Profit: prof,
+            ProductImage: item.ProductImage || undefined,
+          };
+        })
+      : [];
+
+    return {
+      OrderID: orderId,
+      CustomerID: docData.CustomerID || undefined,
+      CustomerName: docData.CustomerName || 'Walk-in Customer',
+      CustomerPhone: docData.CustomerPhone || undefined,
+      CustomerAddress: docData.CustomerAddress || undefined,
+      OrderDate: orderDate,
+      Status: docData.Status || 'completed',
+      Subtotal: subtotal,
+      Discount: discount,
+      Total: total,
+      Cost: cost,
+      Profit: profit,
+      PaymentMethod: docData.PaymentMethod || 'cash',
+      Items: items,
+      Notes: docData.Notes || undefined,
+      CreatedBy: docData.CreatedBy || 'Staff',
+    };
+  };
 
   // Prioritize local cache
   getDocsFromCache(q)
     .then((cacheSnap) => {
       if (!cacheSnap.empty) {
         const cachedList: Order[] = [];
-        cacheSnap.forEach((docSnap) => cachedList.push(docSnap.data() as Order));
-        cachedList.sort((a, b) => new Date(b.OrderDate || (b as any).createdAt || 0).getTime() - new Date(a.OrderDate || (a as any).createdAt || 0).getTime());
+        cacheSnap.forEach((docSnap) => cachedList.push(normalizeOrder(docSnap.data(), docSnap.id)));
+        cachedList.sort((a, b) => new Date(b.OrderDate).getTime() - new Date(a.OrderDate).getTime());
         onData(cachedList);
       }
     })
-    .catch(() => {
-      // Fallback cache without order index if needed
-      getDocsFromCache(colRef)
-        .then((cacheSnap) => {
-          if (!cacheSnap.empty) {
-            const cachedList: Order[] = [];
-            cacheSnap.forEach((docSnap) => cachedList.push(docSnap.data() as Order));
-            cachedList.sort((a, b) => new Date(b.OrderDate || (b as any).createdAt || 0).getTime() - new Date(a.OrderDate || (a as any).createdAt || 0).getTime());
-            onData(cachedList.slice(0, maxLimit));
-          }
-        })
-        .catch(() => {});
-    });
+    .catch(() => {});
 
   return onSnapshot(
     q,
     (snapshot) => {
       const list: Order[] = [];
       snapshot.forEach((docSnap) => {
-        list.push(docSnap.data() as Order);
+        list.push(normalizeOrder(docSnap.data(), docSnap.id));
       });
-      list.sort((a, b) => new Date(b.OrderDate || (b as any).createdAt || 0).getTime() - new Date(a.OrderDate || (a as any).createdAt || 0).getTime());
+      list.sort((a, b) => new Date(b.OrderDate).getTime() - new Date(a.OrderDate).getTime());
       onData(list);
     },
     (error) => {
@@ -308,9 +349,9 @@ export function subscribeOrders(
           .then((cacheSnap) => {
             if (!cacheSnap.empty) {
               const cachedList: Order[] = [];
-              cacheSnap.forEach((docSnap) => cachedList.push(docSnap.data() as Order));
-              cachedList.sort((a, b) => new Date(b.OrderDate || (b as any).createdAt || 0).getTime() - new Date(a.OrderDate || (a as any).createdAt || 0).getTime());
-              onData(cachedList.slice(0, maxLimit));
+              cacheSnap.forEach((docSnap) => cachedList.push(normalizeOrder(docSnap.data(), docSnap.id)));
+              cachedList.sort((a, b) => new Date(b.OrderDate).getTime() - new Date(a.OrderDate).getTime());
+              onData(cachedList);
             }
           })
           .catch(() => {});
@@ -327,47 +368,58 @@ export function subscribeOrders(
 }
 
 /**
- * Subscribes to inventory transactions with cache-first delivery, limit(25) and orderBy("createdAt", "desc")
+ * Subscribes to inventory transactions with cache-first delivery and high capacity (default: 2000 items)
  */
 export function subscribeTransactions(
   onData: (txs: InventoryTransaction[]) => void,
   onError?: (err: Error) => void,
-  maxLimit: number = 25
+  maxLimit: number = 2000
 ): Unsubscribe {
   const colRef = collection(db, COLLECTIONS.TRANSACTIONS);
-  let q = maxLimit > 0 ? query(colRef, orderBy('createdAt', 'desc'), limit(maxLimit)) : colRef;
+  const q = maxLimit > 0 ? query(colRef, limit(maxLimit)) : colRef;
+
+  const normalizeTx = (docData: any, id: string): InventoryTransaction => ({
+    TransactionID: docData.TransactionID || id,
+    TransactionDate: docData.TransactionDate || docData.createdAt || new Date().toISOString(),
+    TransactionType: docData.TransactionType || 'Adjustment IN',
+    VariantID: docData.VariantID || '',
+    ProductCode: docData.ProductCode || '',
+    ProductName: docData.ProductName || '',
+    Size: docData.Size || '',
+    Color: docData.Color || '',
+    Quantity: Number(docData.Quantity) || 0,
+    ActualPrice: Number(docData.ActualPrice) || 0,
+    SellingPrice: Number(docData.SellingPrice) || 0,
+    TotalCost: Number(docData.TotalCost) || 0,
+    TotalSellingValue: Number(docData.TotalSellingValue) || 0,
+    ReferenceID: docData.ReferenceID || undefined,
+    CustomerID: docData.CustomerID || undefined,
+    CustomerName: docData.CustomerName || undefined,
+    Supplier: docData.Supplier || undefined,
+    Notes: docData.Notes || '',
+    CreatedBy: docData.CreatedBy || 'Administrator',
+  });
 
   // Prioritize local cache
   getDocsFromCache(q)
     .then((cacheSnap) => {
       if (!cacheSnap.empty) {
         const cachedList: InventoryTransaction[] = [];
-        cacheSnap.forEach((docSnap) => cachedList.push(docSnap.data() as InventoryTransaction));
-        cachedList.sort((a, b) => new Date(b.TransactionDate || (b as any).createdAt || 0).getTime() - new Date(a.TransactionDate || (a as any).createdAt || 0).getTime());
+        cacheSnap.forEach((docSnap) => cachedList.push(normalizeTx(docSnap.data(), docSnap.id)));
+        cachedList.sort((a, b) => new Date(b.TransactionDate).getTime() - new Date(a.TransactionDate).getTime());
         onData(cachedList);
       }
     })
-    .catch(() => {
-      getDocsFromCache(colRef)
-        .then((cacheSnap) => {
-          if (!cacheSnap.empty) {
-            const cachedList: InventoryTransaction[] = [];
-            cacheSnap.forEach((docSnap) => cachedList.push(docSnap.data() as InventoryTransaction));
-            cachedList.sort((a, b) => new Date(b.TransactionDate || (b as any).createdAt || 0).getTime() - new Date(a.TransactionDate || (a as any).createdAt || 0).getTime());
-            onData(cachedList.slice(0, maxLimit));
-          }
-        })
-        .catch(() => {});
-    });
+    .catch(() => {});
 
   return onSnapshot(
     q,
     (snapshot) => {
       const list: InventoryTransaction[] = [];
       snapshot.forEach((docSnap) => {
-        list.push(docSnap.data() as InventoryTransaction);
+        list.push(normalizeTx(docSnap.data(), docSnap.id));
       });
-      list.sort((a, b) => new Date(b.TransactionDate || (b as any).createdAt || 0).getTime() - new Date(a.TransactionDate || (a as any).createdAt || 0).getTime());
+      list.sort((a, b) => new Date(b.TransactionDate).getTime() - new Date(a.TransactionDate).getTime());
       onData(list);
     },
     (error) => {
@@ -378,9 +430,9 @@ export function subscribeTransactions(
           .then((cacheSnap) => {
             if (!cacheSnap.empty) {
               const cachedList: InventoryTransaction[] = [];
-              cacheSnap.forEach((docSnap) => cachedList.push(docSnap.data() as InventoryTransaction));
-              cachedList.sort((a, b) => new Date(b.TransactionDate || (b as any).createdAt || 0).getTime() - new Date(a.TransactionDate || (a as any).createdAt || 0).getTime());
-              onData(cachedList.slice(0, maxLimit));
+              cacheSnap.forEach((docSnap) => cachedList.push(normalizeTx(docSnap.data(), docSnap.id)));
+              cachedList.sort((a, b) => new Date(b.TransactionDate).getTime() - new Date(a.TransactionDate).getTime());
+              onData(cachedList);
             }
           })
           .catch(() => {});
@@ -397,12 +449,12 @@ export function subscribeTransactions(
 }
 
 /**
- * Subscribes to customers with cache-first delivery and limit (default: 25 items)
+ * Subscribes to customers with cache-first delivery and limit (default: 500 items)
  */
 export function subscribeCustomers(
   onData: (customers: Customer[]) => void,
   onError?: (err: Error) => void,
-  maxLimit: number = 25
+  maxLimit: number = 500
 ): Unsubscribe {
   const colRef = collection(db, COLLECTIONS.CUSTOMERS);
   const q = maxLimit > 0 ? query(colRef, limit(maxLimit)) : colRef;
@@ -738,26 +790,11 @@ export function subscribeUsers(
 export async function fetchAllUsersDirectly(): Promise<AppUser[]> {
   const colRef = collection(db, COLLECTIONS.USERS);
 
-  // 1. Try local cache first for instant 0ms credential verification
-  try {
-    const cacheSnap = await getDocsFromCache(colRef);
-    if (!cacheSnap.empty) {
-      const list: AppUser[] = [];
-      cacheSnap.forEach((d) => list.push(d.data() as AppUser));
-      list.sort((a, b) => (a.userNumber || '').localeCompare(b.userNumber || '', undefined, { numeric: true }));
-      // If cache returned users, also trigger a background refresh
-      getDocs(colRef).catch(() => {});
-      return list;
-    }
-  } catch {
-    // Cache miss or index not yet ready
-  }
-
-  // 2. Fallback to server query with a safety timeout so login never hangs
+  // 1. Prioritize direct server query first with an 8-second timeout so updated passwords and new accounts validate on the 1st attempt
   try {
     const serverPromise = getDocs(colRef);
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('User fetch timeout')), 2500)
+      setTimeout(() => reject(new Error('User fetch timeout')), 8000)
     );
     const snap = await Promise.race([serverPromise, timeoutPromise]);
     if (!snap.empty) {
@@ -768,16 +805,154 @@ export async function fetchAllUsersDirectly(): Promise<AppUser[]> {
     }
   } catch (err) {
     console.warn('Could not fetch users directly from server, checking local cache fallback:', err);
-    try {
-      const cacheSnap = await getDocsFromCache(colRef);
-      if (!cacheSnap.empty) {
-        const list: AppUser[] = [];
-        cacheSnap.forEach((d) => list.push(d.data() as AppUser));
-        list.sort((a, b) => (a.userNumber || '').localeCompare(b.userNumber || '', undefined, { numeric: true }));
-        return list;
-      }
-    } catch {}
   }
+
+  // 2. Fallback to local cache if network is offline or server unreachable
+  try {
+    const cacheSnap = await getDocsFromCache(colRef);
+    if (!cacheSnap.empty) {
+      const list: AppUser[] = [];
+      cacheSnap.forEach((d) => list.push(d.data() as AppUser));
+      list.sort((a, b) => (a.userNumber || '').localeCompare(b.userNumber || '', undefined, { numeric: true }));
+      return list;
+    }
+  } catch {}
+
+  return [];
+}
+
+/**
+ * Direct order fetching to ensure immediate, complete access to all orders (including past and recent dates)
+ */
+export async function fetchAllOrdersDirectly(): Promise<Order[]> {
+  const colRef = collection(db, COLLECTIONS.ORDERS);
+  const normalize = (docData: any, id: string): Order => {
+    const orderId = docData.OrderID || id;
+    const orderDate = docData.OrderDate || docData.createdAt || new Date().toISOString();
+    const total = typeof docData.Total === 'number' ? docData.Total : Number(docData.Total) || 0;
+    const cost = typeof docData.Cost === 'number' ? docData.Cost : Number(docData.Cost) || 0;
+    const profit = typeof docData.Profit === 'number' ? docData.Profit : Math.round((total - cost) * 100) / 100;
+    const subtotal = typeof docData.Subtotal === 'number' ? docData.Subtotal : total;
+    const discount = typeof docData.Discount === 'number' ? docData.Discount : 0;
+    const items = Array.isArray(docData.Items)
+      ? docData.Items.map((item: any, idx: number) => {
+          const qty = Number(item.Quantity) || 1;
+          const uPrice = Number(item.UnitPrice) || 0;
+          const aPrice = Number(item.ActualPrice) || 0;
+          const sub = typeof item.Subtotal === 'number' ? item.Subtotal : qty * uPrice;
+          const prof = typeof item.Profit === 'number' ? item.Profit : (uPrice - aPrice) * qty;
+          return {
+            OrderItemID: item.OrderItemID || `item-${orderId}-${idx}`,
+            OrderID: item.OrderID || orderId,
+            VariantID: item.VariantID || '',
+            ProductCode: item.ProductCode || '',
+            ProductName: item.ProductName || '',
+            Size: item.Size || '',
+            Color: item.Color || '',
+            Quantity: qty,
+            UnitPrice: uPrice,
+            ActualPrice: aPrice,
+            Subtotal: sub,
+            Profit: prof,
+            ProductImage: item.ProductImage || undefined,
+          };
+        })
+      : [];
+
+    return {
+      OrderID: orderId,
+      CustomerID: docData.CustomerID || undefined,
+      CustomerName: docData.CustomerName || 'Walk-in Customer',
+      CustomerPhone: docData.CustomerPhone || undefined,
+      CustomerAddress: docData.CustomerAddress || undefined,
+      OrderDate: orderDate,
+      Status: docData.Status || 'completed',
+      Subtotal: subtotal,
+      Discount: discount,
+      Total: total,
+      Cost: cost,
+      Profit: profit,
+      PaymentMethod: docData.PaymentMethod || 'cash',
+      Items: items,
+      Notes: docData.Notes || undefined,
+      CreatedBy: docData.CreatedBy || 'Staff',
+    };
+  };
+
+  try {
+    const snap = await getDocs(colRef);
+    if (!snap.empty) {
+      const list: Order[] = [];
+      snap.forEach((d) => list.push(normalize(d.data(), d.id)));
+      list.sort((a, b) => new Date(b.OrderDate).getTime() - new Date(a.OrderDate).getTime());
+      return list;
+    }
+  } catch (err) {
+    console.warn('Could not fetch orders from server, trying cache:', err);
+  }
+
+  try {
+    const cacheSnap = await getDocsFromCache(colRef);
+    if (!cacheSnap.empty) {
+      const list: Order[] = [];
+      cacheSnap.forEach((d) => list.push(normalize(d.data(), d.id)));
+      list.sort((a, b) => new Date(b.OrderDate).getTime() - new Date(a.OrderDate).getTime());
+      return list;
+    }
+  } catch {}
+
+  return [];
+}
+
+/**
+ * Direct transaction fetching to ensure immediate, complete access to all inventory transactions
+ */
+export async function fetchAllTransactionsDirectly(): Promise<InventoryTransaction[]> {
+  const colRef = collection(db, COLLECTIONS.TRANSACTIONS);
+  const normalize = (docData: any, id: string): InventoryTransaction => ({
+    TransactionID: docData.TransactionID || id,
+    TransactionDate: docData.TransactionDate || docData.createdAt || new Date().toISOString(),
+    TransactionType: docData.TransactionType || 'Adjustment IN',
+    VariantID: docData.VariantID || '',
+    ProductCode: docData.ProductCode || '',
+    ProductName: docData.ProductName || '',
+    Size: docData.Size || '',
+    Color: docData.Color || '',
+    Quantity: Number(docData.Quantity) || 0,
+    ActualPrice: Number(docData.ActualPrice) || 0,
+    SellingPrice: Number(docData.SellingPrice) || 0,
+    TotalCost: Number(docData.TotalCost) || 0,
+    TotalSellingValue: Number(docData.TotalSellingValue) || 0,
+    ReferenceID: docData.ReferenceID || undefined,
+    CustomerID: docData.CustomerID || undefined,
+    CustomerName: docData.CustomerName || undefined,
+    Supplier: docData.Supplier || undefined,
+    Notes: docData.Notes || '',
+    CreatedBy: docData.CreatedBy || 'Administrator',
+  });
+
+  try {
+    const snap = await getDocs(colRef);
+    if (!snap.empty) {
+      const list: InventoryTransaction[] = [];
+      snap.forEach((d) => list.push(normalize(d.data(), d.id)));
+      list.sort((a, b) => new Date(b.TransactionDate).getTime() - new Date(a.TransactionDate).getTime());
+      return list;
+    }
+  } catch (err) {
+    console.warn('Could not fetch transactions from server, trying cache:', err);
+  }
+
+  try {
+    const cacheSnap = await getDocsFromCache(colRef);
+    if (!cacheSnap.empty) {
+      const list: InventoryTransaction[] = [];
+      cacheSnap.forEach((d) => list.push(normalize(d.data(), d.id)));
+      list.sort((a, b) => new Date(b.TransactionDate).getTime() - new Date(a.TransactionDate).getTime());
+      return list;
+    }
+  } catch {}
+
   return [];
 }
 
@@ -953,6 +1128,7 @@ export async function saveProductToFirestore(product: Product): Promise<void> {
   const path = `${COLLECTIONS.PRODUCTS}/${product.ProductID}`;
   const normalizedProduct: Product = {
     ...product,
+    DeletedVariantIDs: product.DeletedVariantIDs || [],
     Variants: (product.Variants || []).map((v, i) => ({
       ...v,
       VariantID: v.VariantID || `var-${product.ProductID}-${i}`,

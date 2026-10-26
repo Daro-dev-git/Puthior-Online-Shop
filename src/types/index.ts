@@ -46,6 +46,7 @@ export interface Product {
   ModifiedDate: string;
   Images: ProductImage[];
   Variants: ProductVariant[];
+  DeletedVariantIDs?: string[];
 }
 
 export interface DressType {

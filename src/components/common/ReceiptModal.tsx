@@ -13,10 +13,14 @@ export const ReceiptModal: React.FC = () => {
     window.print();
   };
 
-  const formattedDate = new Date(activeReceiptOrder.OrderDate).toLocaleString('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  const rawDate = activeReceiptOrder.OrderDate || (activeReceiptOrder as any).createdAt;
+  const parsedDate = rawDate ? new Date(rawDate) : new Date();
+  const formattedDate = !isNaN(parsedDate.getTime())
+    ? parsedDate.toLocaleString('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+    : 'N/A';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">

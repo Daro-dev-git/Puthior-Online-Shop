@@ -58,14 +58,14 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ onOpenAddProdu
         return false;
       }
 
-      // Stock status filter
+      // Stock status filter: catch completely out of stock as well as products with out-of-stock sizes/colors
       const totalStock = p.Variants.reduce((s, v) => s + v.CurrentStock, 0);
+      const hasOutOfStockVariant = p.Variants.length === 0 || totalStock === 0 || p.Variants.some((v) => v.CurrentStock === 0);
       const hasLowStockVariant = p.Variants.some((v) => v.CurrentStock <= v.MinimumStock && v.CurrentStock > 0);
-      const isOutOfStock = totalStock === 0;
 
-      if (selectedStockFilter === 'out_of_stock' && !isOutOfStock) return false;
-      if (selectedStockFilter === 'low_stock' && (!hasLowStockVariant || isOutOfStock)) return false;
-      if (selectedStockFilter === 'in_stock' && isOutOfStock) return false;
+      if (selectedStockFilter === 'out_of_stock' && !hasOutOfStockVariant) return false;
+      if (selectedStockFilter === 'low_stock' && (!hasLowStockVariant || totalStock === 0)) return false;
+      if (selectedStockFilter === 'in_stock' && totalStock === 0) return false;
 
       // Price Category filter
       if (selectedPriceCat !== 'all') {

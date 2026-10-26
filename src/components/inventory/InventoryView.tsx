@@ -173,7 +173,15 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs">
+        <button
+          type="button"
+          onClick={() => setStockStatusFilter('all')}
+          className={`text-left p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
+            stockStatusFilter === 'all'
+              ? 'bg-stone-50 border-stone-400 ring-2 ring-stone-400/20'
+              : 'bg-white border-stone-200 hover:border-stone-300'
+          }`}
+        >
           <span className="text-xs text-stone-500">Total Stock Units</span>
           <div className="text-2xl font-bold font-mono-numbers text-stone-900 mt-1">
             {kpis.totalStockUnits}
@@ -181,7 +189,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
           <span className="text-[11px] text-stone-400 font-mono-numbers">
             across {kpis.totalVariants} unique variants
           </span>
-        </div>
+        </button>
 
         <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs">
           <span className="text-xs text-stone-500">Inventory Valuation</span>
@@ -193,21 +201,44 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
           </span>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs">
+        <button
+          type="button"
+          onClick={() => setStockStatusFilter(stockStatusFilter === 'low_stock' ? 'all' : 'low_stock')}
+          className={`text-left p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
+            stockStatusFilter === 'low_stock'
+              ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400/20'
+              : 'bg-white border-stone-200 hover:border-amber-300'
+          }`}
+        >
           <span className="text-xs text-stone-500">Low Stock Variants</span>
           <div className="text-2xl font-bold font-mono-numbers text-amber-600 mt-1">
             {kpis.lowStockCount}
           </div>
-          <span className="text-[11px] text-stone-400">≤ minimum threshold</span>
-        </div>
+          <span className="text-[11px] text-stone-400">≤ minimum threshold (Click to filter)</span>
+        </button>
 
-        <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs">
-          <span className="text-xs text-stone-500">Out of Stock Variants</span>
+        <button
+          type="button"
+          onClick={() => setStockStatusFilter(stockStatusFilter === 'out_of_stock' ? 'all' : 'out_of_stock')}
+          className={`text-left p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
+            stockStatusFilter === 'out_of_stock'
+              ? 'bg-rose-50 border-rose-400 ring-2 ring-rose-400/30'
+              : 'bg-white border-stone-200 hover:border-rose-300'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-stone-500">Out of Stock Variants</span>
+            {kpis.outOfStockCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 uppercase animate-pulse">
+                Action Needed
+              </span>
+            )}
+          </div>
           <div className="text-2xl font-bold font-mono-numbers text-rose-600 mt-1">
             {kpis.outOfStockCount}
           </div>
-          <span className="text-[11px] text-stone-400">zero units available</span>
-        </div>
+          <span className="text-[11px] text-rose-600 font-semibold">0 units available (Click to filter)</span>
+        </button>
       </div>
 
       {/* Search and Filters */}
@@ -228,9 +259,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:bg-white"
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:bg-white cursor-pointer"
             >
-              <option value="all">All Dress Types</option>
+              <option value="all">All Dress Types ({dressTypes.length})</option>
               {dressTypes.map((dt) => (
                 <option key={dt.DressTypeID} value={dt.Name}>
                   {dt.Name}
@@ -243,9 +274,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
             <select
               value={selectedColor}
               onChange={(e) => setSelectedColor(e.target.value)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:bg-white"
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:bg-white cursor-pointer"
             >
-              <option value="all">All Colors</option>
+              <option value="all">All Colors ({colors.length})</option>
               {colors.map((c) => (
                 <option key={c.ColorID} value={c.ColorName}>
                   {c.ColorName}
@@ -258,22 +289,105 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onOpenRestock, onO
             <select
               value={stockStatusFilter}
               onChange={(e) => setStockStatusFilter(e.target.value as any)}
-              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:bg-white font-medium"
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-xs focus:bg-white font-medium cursor-pointer"
             >
-              <option value="all">All Stock Statuses</option>
+              <option value="all">All Stock Statuses ({allVariants.length})</option>
               <option value="in_stock">In Stock (&gt; 0)</option>
-              <option value="low_stock">Low Stock Alert</option>
-              <option value="out_of_stock">Out of Stock (0)</option>
+              <option value="low_stock">Low Stock Alert ({kpis.lowStockCount})</option>
+              <option value="out_of_stock">Out of Stock Only (0 units) ({kpis.outOfStockCount})</option>
             </select>
           </div>
         </div>
 
-        <div className="text-[11px] text-stone-500 flex justify-between pt-1">
-          <span>Showing {filteredVariants.length} inventory variants</span>
-          <span className="font-mono-numbers">
-            Sum Units: {filteredVariants.reduce((s, v) => s + v.currentStock, 0)}
-          </span>
+        {/* Quick Stock Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-stone-100 text-xs">
+          <span className="text-stone-400 font-medium text-[11px] mr-1">Quick Stock Filter:</span>
+          <button
+            type="button"
+            onClick={() => setStockStatusFilter('all')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              stockStatusFilter === 'all'
+                ? 'bg-stone-900 text-white font-semibold'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            All Variants ({allVariants.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStockStatusFilter('in_stock')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              stockStatusFilter === 'in_stock'
+                ? 'bg-emerald-600 text-white font-semibold'
+                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60'
+            }`}
+          >
+            In Stock ({allVariants.filter((v) => v.currentStock > 0).length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStockStatusFilter('low_stock')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              stockStatusFilter === 'low_stock'
+                ? 'bg-amber-600 text-white font-semibold'
+                : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/60'
+            }`}
+          >
+            Low Stock Alert ({kpis.lowStockCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStockStatusFilter('out_of_stock')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+              stockStatusFilter === 'out_of_stock'
+                ? 'bg-rose-600 text-white font-bold shadow-xs'
+                : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 font-semibold'
+            }`}
+          >
+            <XCircle className="w-3.5 h-3.5" />
+            <span>Out of Stock ({kpis.outOfStockCount})</span>
+          </button>
+
+          <div className="ml-auto flex items-center gap-2">
+            {(stockStatusFilter !== 'all' || selectedType !== 'all' || selectedColor !== 'all' || searchQuery) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStockStatusFilter('all');
+                  setSelectedType('all');
+                  setSelectedColor('all');
+                  setSearchQuery('');
+                }}
+                className="text-[11px] text-rose-600 hover:text-rose-800 font-semibold underline cursor-pointer"
+              >
+                Reset All Filters
+              </button>
+            )}
+            <span className="text-[11px] text-stone-500 font-mono-numbers">
+              Showing {filteredVariants.length} variants ({filteredVariants.reduce((s, v) => s + v.currentStock, 0)} units)
+            </span>
+          </div>
         </div>
+
+        {/* Highlighted Banner when Out of Stock filter is active */}
+        {stockStatusFilter === 'out_of_stock' && (
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between gap-3 text-xs text-rose-900 animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>
+                <strong>Out of Stock Filter Active:</strong> Showing all {filteredVariants.length} item(s) with zero physical inventory units. Click <strong>+IN</strong> on any row to record a restock shipment.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="px-2.5 py-1 bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-md font-semibold text-[11px] shrink-0 cursor-pointer flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" />
+              <span>Export Out of Stock List</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Inventory Ledger Table */}

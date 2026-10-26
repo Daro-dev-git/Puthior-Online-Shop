@@ -26,8 +26,15 @@ interface EditProductModalProps {
   onClose: () => void;
 }
 
+interface EditableVariant extends Omit<ProductVariant, 'ActualPrice' | 'SellingPrice' | 'CurrentStock' | 'MinimumStock'> {
+  ActualPrice: number | string;
+  SellingPrice: number | string;
+  CurrentStock: number | string;
+  MinimumStock: number | string;
+}
+
 export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, onClose }) => {
-  const { products, dressTypes, updateProduct, showToast, isAdmin } = useStore();
+  const { products, dressTypes, updateProduct, deleteProduct, deleteVariantFromProduct, showToast, isAdmin } = useStore();
   const product = products.find((p) => p.ProductID === productId);
 
   // Form states
@@ -39,17 +46,21 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
   const [images, setImages] = useState<ProductImage[]>(product?.Images ? [...product.Images] : []);
 
   // Variant editing (prices, quantities, stock thresholds)
-  const [variants, setVariants] = useState<ProductVariant[]>(() => {
+  const [variants, setVariants] = useState<EditableVariant[]>(() => {
     if (!product?.Variants) return [];
     return product.Variants.map((v, i) => ({
       ...v,
       VariantID: v.VariantID || `var-${product.ProductID}-${v.Size}-${v.Color}-${i}`,
-      ActualPrice: Number(v.ActualPrice ?? (v as any).actualPrice ?? 0),
-      SellingPrice: Number(v.SellingPrice ?? (v as any).sellingPrice ?? 0),
+      ActualPrice: v.ActualPrice ?? (v as any).actualPrice ?? 0,
+      SellingPrice: v.SellingPrice ?? (v as any).sellingPrice ?? 0,
       CurrentStock: Math.max(0, Number(v.CurrentStock ?? (v as any).currentStock ?? 0)),
       MinimumStock: Math.max(0, Number(v.MinimumStock ?? (v as any).minimumStock ?? 5)),
     }));
   });
+
+  // Track variant pending delete confirmation
+  const [confirmDeleteVarId, setConfirmDeleteVarId] = useState<string | null>(null);
+  const [showDeleteProductConfirm, setShowDeleteProductConfirm] = useState(false);
 
   // Keep reference of original variants to display stock adjustment deltas
   const originalVariants = useMemo(() => {
@@ -165,15 +176,26 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
     setVariants((prev) =>
       prev.map((v) => {
         if (v.VariantID !== variantId) return v;
-        const numVal =
-          typeof val === 'number'
-            ? Math.max(0, val)
-            : val === ''
-            ? 0
-            : Math.max(0, parseFloat(val) || 0);
-        return { ...v, [field]: numVal };
+        return { ...v, [field]: val };
       })
     );
+  };
+
+  // Permanently delete variant directly from edit modal
+  const handleDeleteVariant = (variantId: string) => {
+    if (variants.length <= 1) {
+      showToast('Product must retain at least one variant. To delete the dress completely, delete the product.', 'error');
+      setConfirmDeleteVarId(null);
+      return;
+    }
+    const res = deleteVariantFromProduct(product.ProductID, variantId);
+    if (res.success) {
+      setVariants((prev) => prev.filter((v) => v.VariantID !== variantId));
+      setConfirmDeleteVarId(null);
+    } else {
+      showToast(res.error || 'Failed to delete variant', 'error');
+      setConfirmDeleteVarId(null);
+    }
   };
 
   // Bulk actions across all variants
@@ -201,10 +223,13 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
 
   const handleBulkStockDelta = (delta: number) => {
     setVariants((prev) =>
-      prev.map((v) => ({
-        ...v,
-        CurrentStock: Math.max(0, v.CurrentStock + delta),
-      }))
+      prev.map((v) => {
+        const cur = typeof v.CurrentStock === 'number' ? v.CurrentStock : (parseInt(String(v.CurrentStock), 10) || 0);
+        return {
+          ...v,
+          CurrentStock: Math.max(0, cur + delta),
+        };
+      })
     );
     showToast(`${delta > 0 ? `Added +${delta}` : `Deducted ${delta}`} unit(s) across all variants`);
   };
@@ -213,7 +238,8 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
   const totalStockDelta = useMemo(() => {
     return variants.reduce((acc, v) => {
       const orig = originalVariants.get(v.VariantID);
-      const diff = v.CurrentStock - (orig?.CurrentStock || 0);
+      const stockNum = typeof v.CurrentStock === 'number' ? v.CurrentStock : (parseInt(String(v.CurrentStock), 10) || 0);
+      const diff = stockNum - (orig?.CurrentStock || 0);
       return acc + diff;
     }, 0);
   }, [variants, originalVariants]);
@@ -248,14 +274,22 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
     setIsSaving(true);
 
     // Synchronize variant product codes and sanitize prices/quantities
-    const updatedVariants = variants.map((v) => ({
-      ...v,
-      ProductCode: cleanCode,
-      ActualPrice: Number(v.ActualPrice) >= 0 ? Number(v.ActualPrice) : 0,
-      SellingPrice: Number(v.SellingPrice) >= 0 ? Number(v.SellingPrice) : 0,
-      CurrentStock: Math.max(0, Number(v.CurrentStock) || 0),
-      MinimumStock: Math.max(0, Number(v.MinimumStock) || 0),
-    }));
+    const updatedVariants: ProductVariant[] = variants.map((v) => {
+      const orig = originalVariants.get(v.VariantID);
+      const numActual = v.ActualPrice !== '' && !isNaN(Number(v.ActualPrice)) ? Math.max(0, Number(v.ActualPrice)) : (orig?.ActualPrice ?? 0);
+      const numSelling = v.SellingPrice !== '' && !isNaN(Number(v.SellingPrice)) ? Math.max(0, Number(v.SellingPrice)) : (orig?.SellingPrice ?? 0);
+      const numStock = v.CurrentStock !== '' && !isNaN(Number(v.CurrentStock)) ? Math.max(0, Math.floor(Number(v.CurrentStock))) : (orig?.CurrentStock ?? 0);
+      const numMin = v.MinimumStock !== '' && !isNaN(Number(v.MinimumStock)) ? Math.max(0, Math.floor(Number(v.MinimumStock))) : 5;
+
+      return {
+        ...v,
+        ProductCode: cleanCode,
+        ActualPrice: numActual,
+        SellingPrice: numSelling,
+        CurrentStock: numStock,
+        MinimumStock: numMin,
+      };
+    });
 
     const updatedProduct: Product = {
       ...product,
@@ -276,6 +310,19 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
       onClose();
     } else if (res.error) {
       setErrorMsg(res.error);
+    }
+  };
+
+  const handleDeleteProduct = () => {
+    if (!product) return;
+    setIsSaving(true);
+    try {
+      deleteProduct(product.ProductID);
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to delete product');
+      setIsSaving(false);
+      setShowDeleteProductConfirm(false);
     }
   };
 
@@ -670,6 +717,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                     <th className="py-2.5 px-3">Selling Price ($)</th>
                     <th className="py-2.5 px-3 text-right">Unit Margin</th>
                     <th className="py-2.5 px-3 text-center">Min Alert</th>
+                    <th className="py-2.5 px-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100 bg-white">
@@ -681,10 +729,13 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                     })
                     .map((v) => {
                       const orig = originalVariants.get(v.VariantID);
-                      const origStock = orig ? orig.CurrentStock : v.CurrentStock;
-                      const stockDiff = v.CurrentStock - origStock;
-                      const profit = v.SellingPrice - v.ActualPrice;
-                      const marginPct = v.ActualPrice > 0 ? (profit / v.ActualPrice) * 100 : 0;
+                      const numActual = typeof v.ActualPrice === 'number' ? v.ActualPrice : (parseFloat(String(v.ActualPrice)) || 0);
+                      const numSelling = typeof v.SellingPrice === 'number' ? v.SellingPrice : (parseFloat(String(v.SellingPrice)) || 0);
+                      const numStock = typeof v.CurrentStock === 'number' ? v.CurrentStock : (parseInt(String(v.CurrentStock), 10) || 0);
+                      const origStock = orig ? orig.CurrentStock : numStock;
+                      const stockDiff = numStock - origStock;
+                      const profit = numSelling - numActual;
+                      const marginPct = numActual > 0 ? (profit / numActual) * 100 : 0;
 
                       return (
                         <tr key={v.VariantID} className="hover:bg-rose-50/30 transition-colors">
@@ -704,7 +755,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                                   handleVariantFieldChange(
                                     v.VariantID,
                                     'CurrentStock',
-                                    Math.max(0, v.CurrentStock - 5)
+                                    Math.max(0, numStock - 5)
                                   )
                                 }
                                 className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold cursor-pointer text-[10px]"
@@ -718,7 +769,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                                   handleVariantFieldChange(
                                     v.VariantID,
                                     'CurrentStock',
-                                    Math.max(0, v.CurrentStock - 1)
+                                    Math.max(0, numStock - 1)
                                   )
                                 }
                                 className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center cursor-pointer text-xs"
@@ -734,7 +785,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                                   handleVariantFieldChange(
                                     v.VariantID,
                                     'CurrentStock',
-                                    Math.max(0, parseInt(e.target.value, 10) || 0)
+                                    e.target.value
                                   )
                                 }
                                 className="w-14 px-1.5 py-1 text-center bg-stone-50 border border-stone-200 rounded font-mono-numbers font-bold text-xs focus:bg-white focus:ring-1 focus:ring-rose-500"
@@ -742,7 +793,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleVariantFieldChange(v.VariantID, 'CurrentStock', v.CurrentStock + 1)
+                                  handleVariantFieldChange(v.VariantID, 'CurrentStock', numStock + 1)
                                 }
                                 className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center cursor-pointer text-xs"
                                 title="Add 1 unit"
@@ -752,7 +803,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleVariantFieldChange(v.VariantID, 'CurrentStock', v.CurrentStock + 5)
+                                  handleVariantFieldChange(v.VariantID, 'CurrentStock', numStock + 5)
                                 }
                                 className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold cursor-pointer text-[10px]"
                                 title="Add 5 units"
@@ -838,11 +889,50 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
                                 handleVariantFieldChange(
                                   v.VariantID,
                                   'MinimumStock',
-                                  Math.max(0, parseInt(e.target.value, 10) || 0)
+                                  e.target.value
                                 )
                               }
                               className="w-12 px-1 py-1 text-center bg-stone-50 border border-stone-200 rounded text-xs text-stone-600 focus:bg-white font-mono-numbers"
                             />
+                          </td>
+
+                          {/* Permanent Variant Delete Button */}
+                          <td className="py-2.5 px-3 text-right">
+                            {isAdmin && (
+                              confirmDeleteVarId === v.VariantID ? (
+                                <div className="inline-flex items-center gap-1 justify-end animate-fadeIn">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteVariant(v.VariantID)}
+                                    className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] cursor-pointer"
+                                    title="Confirm permanent deletion"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteVarId(null)}
+                                    className="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-600 text-[10px] cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={variants.length <= 1}
+                                  onClick={() => setConfirmDeleteVarId(v.VariantID)}
+                                  title={variants.length <= 1 ? 'Product must keep at least one variant' : `Permanently delete size ${v.Size} / ${v.Color}`}
+                                  className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                    variants.length <= 1
+                                      ? 'text-stone-300 cursor-not-allowed'
+                                      : 'text-stone-400 hover:text-rose-600 hover:bg-rose-50'
+                                  }`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )
+                            )}
                           </td>
                         </tr>
                       );
@@ -853,32 +943,72 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({ productId, o
           </div>
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-200">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSaving}
-              className="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="px-5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Save Changes</span>
-                </>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-stone-200">
+            <div>
+              {isAdmin && (
+                showDeleteProductConfirm ? (
+                  <div className="flex flex-wrap items-center gap-2 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl animate-fadeIn">
+                    <span className="text-xs font-semibold text-rose-800">
+                      Permanently delete this product & all its variants?
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={handleDeleteProduct}
+                      className="px-2.5 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-md shadow-xs cursor-pointer transition-colors"
+                    >
+                      Yes, Delete Forever
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => setShowDeleteProductConfirm(false)}
+                      className="px-2 py-1 text-xs font-medium text-stone-600 hover:text-stone-800 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => setShowDeleteProductConfirm(true)}
+                    className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Entire Product</span>
+                  </button>
+                )
               )}
-            </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSaving}
+                className="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>

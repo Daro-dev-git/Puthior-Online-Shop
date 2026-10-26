@@ -55,6 +55,8 @@ import {
   saveUserToFirestore,
   deleteUserFromFirestore,
   fetchAllUsersDirectly,
+  fetchAllOrdersDirectly,
+  fetchAllTransactionsDirectly,
 } from '../firebase/firestoreService';
 import { subscribeQuotaStatus, FIRESTORE_UPGRADE_URL } from '../firebase/config';
 import { isValidEmail, normalizeEmail } from '../utils/validators';
@@ -248,11 +250,52 @@ interface StoreContextType {
     mailtoUrl: string;
     error?: string;
   }>;
+
+  // Cloud History Sync & Restore Verification
+  refreshAllHistory: () => Promise<{ ordersCount: number; transactionsCount: number }>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 const SESSION_STORAGE_KEY = 'gds_active_user_session';
+const TOMBSTONE_PRODUCTS_KEY = 'gds_tombstone_products';
+const TOMBSTONE_VARIANTS_KEY = 'gds_tombstone_variants';
+
+export const getTombstonedProductIds = (): Set<string> => {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(TOMBSTONE_PRODUCTS_KEY) : null;
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+};
+
+export const addTombstonedProductId = (productId: string) => {
+  try {
+    if (typeof window === 'undefined') return;
+    const set = getTombstonedProductIds();
+    set.add(productId);
+    localStorage.setItem(TOMBSTONE_PRODUCTS_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+};
+
+export const getTombstonedVariantIds = (): Set<string> => {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(TOMBSTONE_VARIANTS_KEY) : null;
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+};
+
+export const addTombstonedVariantId = (variantId: string) => {
+  try {
+    if (typeof window === 'undefined') return;
+    const set = getTombstonedVariantIds();
+    set.add(variantId);
+    localStorage.setItem(TOMBSTONE_VARIANTS_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+};
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Navigation & View state
@@ -266,7 +309,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const cached = localStorage.getItem('gds_cached_products');
-      return cached ? JSON.parse(cached) : INITIAL_PRODUCTS;
+      const loaded: Product[] = cached ? JSON.parse(cached) : INITIAL_PRODUCTS;
+      const productTombstones = getTombstonedProductIds();
+      const variantTombstones = getTombstonedVariantIds();
+
+      return loaded
+        .filter((p) => !productTombstones.has(p.ProductID))
+        .map((p) => {
+          const deletedSet = new Set([...(p.DeletedVariantIDs || []), ...Array.from(variantTombstones)]);
+          return {
+            ...p,
+            DeletedVariantIDs: Array.from(deletedSet),
+            Variants: (p.Variants || []).filter((v) => !deletedSet.has(v.VariantID)),
+          };
+        });
     } catch {
       return INITIAL_PRODUCTS;
     }
@@ -426,18 +482,41 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (list.length > 0) {
           setProducts((prev) => {
             // Protect against Firestore snapshot rolling back recently updated products with newer local timestamp
-            const merged = [...prev];
-            list.forEach((incomingRaw) => {
-              // Normalize incoming product variants so no case discrepancy (actualPrice vs ActualPrice) can zero or revert prices
-              const incoming: Product = {
-                ...incomingRaw,
-                Variants: (incomingRaw.Variants || []).map((iv) => ({
+            const productTombstones = getTombstonedProductIds();
+            const variantTombstones = getTombstonedVariantIds();
+
+            // Strictly filter out any products that have been deleted in this or previous sessions
+            const merged = prev.filter((p) => !productTombstones.has(p.ProductID));
+            const validIncoming = list.filter((p) => !productTombstones.has(p.ProductID));
+
+            validIncoming.forEach((incomingRaw) => {
+              if (Array.isArray(incomingRaw.DeletedVariantIDs)) {
+                incomingRaw.DeletedVariantIDs.forEach((id) => {
+                  if (id) addTombstonedVariantId(id);
+                });
+              }
+
+              const deletedIds = new Set([
+                ...(incomingRaw.DeletedVariantIDs || []),
+                ...Array.from(variantTombstones),
+              ]);
+
+              // Normalize incoming product variants so no case discrepancy (actualPrice vs ActualPrice) can zero or revert prices,
+              // and strictly eliminate any deleted variants from ever re-appearing tomorrow
+              const filteredVariants = (incomingRaw.Variants || [])
+                .filter((iv) => !deletedIds.has(iv.VariantID))
+                .map((iv) => ({
                   ...iv,
                   ActualPrice: Number(iv.ActualPrice ?? (iv as any).actualPrice ?? (iv as any).costPrice ?? 0),
                   SellingPrice: Number(iv.SellingPrice ?? (iv as any).sellingPrice ?? 0),
                   CurrentStock: Math.max(0, Number(iv.CurrentStock ?? (iv as any).currentStock ?? 0)),
                   MinimumStock: Math.max(0, Number(iv.MinimumStock ?? (iv as any).minimumStock ?? 5)),
-                })),
+                }));
+
+              const incoming: Product = {
+                ...incomingRaw,
+                DeletedVariantIDs: Array.from(deletedIds),
+                Variants: filteredVariants,
               };
 
               const idx = merged.findIndex((p) => p.ProductID === incoming.ProductID);
@@ -446,46 +525,71 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const currentMod = current.ModifiedDate ? new Date(current.ModifiedDate).getTime() : 0;
                 const incomingMod = incoming.ModifiedDate ? new Date(incoming.ModifiedDate).getTime() : 0;
 
+                // Merge deleted IDs from current and incoming
+                const combinedDeleted = Array.from(
+                  new Set([...(current.DeletedVariantIDs || []), ...Array.from(deletedIds)])
+                );
+
                 // Only replace if incoming from Firestore is strictly newer
                 if (!currentMod || (incomingMod > 0 && incomingMod > currentMod)) {
-                  merged[idx] = incoming;
+                  merged[idx] = {
+                    ...incoming,
+                    DeletedVariantIDs: combinedDeleted,
+                    Variants: incoming.Variants.filter((v) => !combinedDeleted.includes(v.VariantID)),
+                  };
                 } else if (incomingMod === currentMod) {
                   // If timestamps are identical, preserve updated local variant fields to eliminate auto rollback
-                  const mergedVariants = (incoming.Variants || []).map((inVar) => {
-                    const curVar = (current.Variants || []).find(
-                      (cv) =>
-                        cv.VariantID === inVar.VariantID ||
-                        (cv.Size === inVar.Size && cv.Color === inVar.Color)
-                    );
-                    return curVar
-                      ? {
-                          ...inVar,
-                          ActualPrice: curVar.ActualPrice,
-                          SellingPrice: curVar.SellingPrice,
-                          CurrentStock: curVar.CurrentStock,
-                        }
-                      : inVar;
-                  });
-                  merged[idx] = { ...current, ...incoming, Variants: mergedVariants };
+                  const mergedVariants = (incoming.Variants || [])
+                    .filter((inVar) => !combinedDeleted.includes(inVar.VariantID))
+                    .map((inVar) => {
+                      const curVar = (current.Variants || []).find(
+                        (cv) =>
+                          cv.VariantID === inVar.VariantID ||
+                          (cv.Size === inVar.Size && cv.Color === inVar.Color)
+                      );
+                      return curVar
+                        ? {
+                            ...inVar,
+                            ActualPrice: curVar.ActualPrice,
+                            SellingPrice: curVar.SellingPrice,
+                            CurrentStock: curVar.CurrentStock,
+                          }
+                        : inVar;
+                    });
+                  merged[idx] = { ...current, ...incoming, DeletedVariantIDs: combinedDeleted, Variants: mergedVariants };
+                } else {
+                  // Current is newer; ensure deleted variants are also pruned from current
+                  merged[idx] = {
+                    ...current,
+                    DeletedVariantIDs: combinedDeleted,
+                    Variants: (current.Variants || []).filter((v) => !combinedDeleted.includes(v.VariantID)),
+                  };
                 }
               } else {
                 merged.push(incoming);
               }
             });
 
-            if (JSON.stringify(prev) === JSON.stringify(merged)) {
+            const finalClean = merged
+              .filter((p) => !productTombstones.has(p.ProductID))
+              .map((p) => ({
+                ...p,
+                Variants: (p.Variants || []).filter((v) => !variantTombstones.has(v.VariantID)),
+              }));
+
+            if (JSON.stringify(prev) === JSON.stringify(finalClean)) {
               return prev;
             }
             try {
-              localStorage.setItem('gds_cached_products', JSON.stringify(merged));
+              localStorage.setItem('gds_cached_products', JSON.stringify(finalClean));
             } catch {}
-            return merged;
+            return finalClean;
           });
         }
       }, undefined, 100)
     );
 
-    // 2. Customers (limited to 25 items max)
+    // 2. Customers
     unsubs.push(
       subscribeCustomers((list) => {
         setCustomers((prev) => {
@@ -497,10 +601,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           } catch {}
           return list;
         });
-      }, undefined, 25)
+      }, undefined, 500)
     );
 
-    // 3. Orders (limited to 25 recent items with orderBy createdAt desc)
+    // 3. Orders (loads full history with no 25 cutoff)
     unsubs.push(
       subscribeOrders((list) => {
         setOrders((prev) => {
@@ -512,10 +616,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           } catch {}
           return list;
         });
-      }, undefined, 25)
+      }, undefined, 2000)
     );
 
-    // 4. Inventory Transactions (limited to 25 recent items with orderBy createdAt desc)
+    // 4. Inventory Transactions (loads full history with no 25 cutoff)
     unsubs.push(
       subscribeTransactions((list) => {
         setTransactions((prev) => {
@@ -527,7 +631,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           } catch {}
           return list;
         });
-      }, undefined, 25)
+      }, undefined, 2000)
     );
 
     // 5. Users (cache prioritized)
@@ -602,10 +706,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       );
     };
 
-    let userExists = localPool.find(matchUser);
-
     // 2. Check password match (handles both trimmed and raw passwords)
-    const isPasswordMatch = (u: AppUser) => (u.password || '').trim() === cleanPass || u.password === pass;
+    const isPasswordMatch = (u: AppUser) =>
+      Boolean(u.password && ((u.password || '').trim() === cleanPass || u.password === pass));
+
+    const matchingCandidates = localPool.filter(matchUser);
+    // Prioritize candidates where password matches
+    let userExists = matchingCandidates.find(isPasswordMatch) || matchingCandidates[0];
 
     // 3. If user is not found locally OR password does not match local cached version,
     // immediately query Firestore directly so first-attempt login never fails due to async subscription delay!
@@ -618,9 +725,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           try {
             localStorage.setItem('gds_cached_users', JSON.stringify(freshUsers));
           } catch {}
-          const remoteFound = freshUsers.find(matchUser);
-          if (remoteFound) {
-            userExists = remoteFound;
+          const remoteMatches = freshUsers.filter(matchUser);
+          const remoteValid = remoteMatches.find(isPasswordMatch) || remoteMatches[0];
+          if (remoteValid) {
+            userExists = remoteValid;
           }
         }
       } catch (err) {
@@ -711,7 +819,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     try {
-      setUsers((prev) => [...prev, created]);
+      setUsers((prev) => {
+        const next = [...prev, created];
+        try {
+          localStorage.setItem('gds_cached_users', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
       await saveUserToFirestore(created);
       showToast(`Staff account "${created.name}" created and saved to database!`);
       return { success: true };
@@ -758,7 +872,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     try {
-      setUsers((prev) => prev.map((u) => (u.userId === user.userId ? sanitizedUser : u)));
+      setUsers((prev) => {
+        const next = prev.map((u) => (u.userId === user.userId ? sanitizedUser : u));
+        try {
+          localStorage.setItem('gds_cached_users', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
       await saveUserToFirestore(sanitizedUser);
       if (currentUser?.userId === user.userId) {
         setCurrentUser(sanitizedUser);
@@ -788,6 +908,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     try {
       setUsers(remainingUsers);
+      try {
+        localStorage.setItem('gds_cached_users', JSON.stringify(remainingUsers));
+      } catch {}
       await deleteUserFromFirestore(userId);
 
       if (currentUser?.userId === userId) {
@@ -990,10 +1113,31 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       };
     });
 
+    // Check if any variants from currentProd were removed
+    const remainingVariantIds = new Set(
+      (product.Variants || []).map((v) => v.VariantID).filter(Boolean)
+    );
+    const newlyDeletedVariantIds: string[] = [];
+    oldVariants.forEach((ov) => {
+      if (ov.VariantID && !remainingVariantIds.has(ov.VariantID)) {
+        newlyDeletedVariantIds.push(ov.VariantID);
+        addTombstonedVariantId(ov.VariantID);
+      }
+    });
+
+    const combinedDeletedVariantIds = Array.from(
+      new Set([
+        ...(currentProd?.DeletedVariantIDs || []),
+        ...(product.DeletedVariantIDs || []),
+        ...newlyDeletedVariantIds,
+      ])
+    );
+
     const updated: Product = {
       ...product,
       ProductCode: cleanCode,
-      Variants: updatedVariants,
+      Variants: updatedVariants.filter((v) => !combinedDeletedVariantIds.includes(v.VariantID)),
+      DeletedVariantIDs: combinedDeletedVariantIds,
       ModifiedDate: nowIso,
     };
 
@@ -1034,13 +1178,37 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return { success: true };
   };
 
-  // Delete Product
+  // Delete Product Permanently
   const deleteProduct = (productId: string) => {
     const prod = products.find((p) => p.ProductID === productId);
-    setProducts((prev) => prev.filter((p) => p.ProductID !== productId));
+
+    // 1. Mark product and all associated variants in persistent tombstones
+    addTombstonedProductId(productId);
+    if (prod?.Variants) {
+      prod.Variants.forEach((v) => {
+        if (v.VariantID) addTombstonedVariantId(v.VariantID);
+      });
+    }
+
+    // 2. Clear current view selection if viewing this product
+    if (selectedProductId === productId) {
+      setSelectedProductId(null);
+    }
+
+    // 3. Prune from in-memory state and update local storage immediately
+    setProducts((prev) => {
+      const next = prev.filter((p) => p.ProductID !== productId);
+      try {
+        localStorage.setItem('gds_cached_products', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    // 4. Delete document permanently from Firestore
     deleteProductFromFirestore(productId).catch(console.error);
+
     if (prod) {
-      showToast(`Product "${prod.ProductName}" removed.`);
+      showToast(`Product "${prod.ProductName}" (${prod.ProductCode}) permanently deleted from apps.`);
     }
   };
 
@@ -1313,7 +1481,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return { success: true };
   };
 
-  // Delete Variant from Product
+  // Delete Variant from Product permanently
   const deleteVariantFromProduct = (
     productId: string,
     variantId: string
@@ -1329,15 +1497,32 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
 
     const targetVar = prod.Variants.find((v) => v.VariantID === variantId);
+    // 1. Record in persistent tombstone so it can NEVER revive from cache or snapshots
+    addTombstonedVariantId(variantId);
+
+    // 2. Add to product's DeletedVariantIDs
+    const updatedDeletedIds = Array.from(new Set([...(prod.DeletedVariantIDs || []), variantId]));
+
+    const nowIso = new Date().toISOString();
     const updatedProd: Product = {
       ...prod,
       Variants: prod.Variants.filter((v) => v.VariantID !== variantId),
-      ModifiedDate: new Date().toISOString(),
+      DeletedVariantIDs: updatedDeletedIds,
+      ModifiedDate: nowIso,
     };
 
-    setProducts((prev) => prev.map((p) => (p.ProductID === productId ? updatedProd : p)));
+    // 3. Update memory and localStorage immediately
+    setProducts((prev) => {
+      const next = prev.map((p) => (p.ProductID === productId ? updatedProd : p));
+      try {
+        localStorage.setItem('gds_cached_products', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    // 4. Persist to Firestore
     saveProductToFirestore(updatedProd).catch(console.error);
-    showToast(`Variant (${targetVar?.Size} / ${targetVar?.Color}) removed.`);
+    showToast(`Variant (${targetVar?.Size || ''} / ${targetVar?.Color || ''}) permanently deleted.`);
     return { success: true };
   };
 
@@ -2372,17 +2557,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
     });
 
-    const todayOrdersList = orders.filter((o) => o.OrderDate.startsWith(today));
-    const todayRevenue = todayOrdersList.reduce((sum, o) => sum + o.Total, 0);
-    const todayCost = todayOrdersList.reduce((sum, o) => sum + o.Cost, 0);
-    const todayProfit = todayOrdersList.reduce((sum, o) => sum + o.Profit, 0);
+    const todayOrdersList = orders.filter((o) => (o.OrderDate || (o as any).createdAt || '').startsWith(today));
+    const todayRevenue = todayOrdersList.reduce((sum, o) => sum + (o.Total || 0), 0);
+    const todayCost = todayOrdersList.reduce((sum, o) => sum + (o.Cost || 0), 0);
+    const todayProfit = todayOrdersList.reduce((sum, o) => sum + (o.Profit || 0), 0);
     const todayOrders = todayOrdersList.length;
     const todayItemsSold = todayOrdersList.reduce(
-      (sum, o) => sum + o.Items.reduce((iSum, item) => iSum + item.Quantity, 0),
+      (sum, o) => sum + (Array.isArray(o.Items) ? o.Items.reduce((iSum, item) => iSum + (item.Quantity || 0), 0) : 0),
       0
     );
 
-    const todayTxList = transactions.filter((t) => t.TransactionDate.startsWith(today));
+    const todayTxList = transactions.filter((t) => (t.TransactionDate || (t as any).createdAt || '').startsWith(today));
     const todayStockIn = todayTxList
       .filter((t) => ['Purchase', 'Stock Received', 'Customer Return', 'Adjustment IN'].includes(t.TransactionType))
       .reduce((sum, t) => sum + t.Quantity, 0);
@@ -2560,6 +2745,37 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   };
 
+  // Authoritative cloud history restore & synchronization to verify zero data lost
+  const refreshAllHistory = async (): Promise<{ ordersCount: number; transactionsCount: number }> => {
+    try {
+      const [freshOrders, freshTxs] = await Promise.all([
+        fetchAllOrdersDirectly(),
+        fetchAllTransactionsDirectly(),
+      ]);
+
+      if (freshOrders.length > 0) {
+        setOrders(freshOrders);
+        try {
+          localStorage.setItem('gds_cached_orders', JSON.stringify(freshOrders));
+        } catch {}
+      }
+
+      if (freshTxs.length > 0) {
+        setTransactions(freshTxs);
+        try {
+          localStorage.setItem('gds_cached_transactions', JSON.stringify(freshTxs));
+        } catch {}
+      }
+
+      showToast(`Synchronized and restored all ${freshOrders.length} orders & ${freshTxs.length} transactions from cloud!`);
+      return { ordersCount: freshOrders.length, transactionsCount: freshTxs.length };
+    } catch (err) {
+      console.error('Failed to refresh history:', err);
+      showToast('Could not refresh cloud history, running with cached data', 'error');
+      return { ordersCount: orders.length, transactionsCount: transactions.length };
+    }
+  };
+
   return (
     <StoreContext.Provider
       value={{
@@ -2651,6 +2867,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         lowStockItemsList,
         emailAlertRecipients,
         sendLowStockEmailAlert,
+        refreshAllHistory,
       }}
     >
       {children}
