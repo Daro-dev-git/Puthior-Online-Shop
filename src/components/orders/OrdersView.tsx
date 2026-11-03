@@ -135,8 +135,14 @@ export const OrdersView: React.FC = () => {
 
       // 3. Date / Date Range Filter
       const orderDateStr = (o.OrderDate || (o as any).createdAt || '').split('T')[0];
-      if (startDate && orderDateStr < startDate) return false;
-      if (endDate && orderDateStr > endDate) return false;
+      if (datePreset === 'today') {
+        const localToday = new Date().toLocaleDateString('en-CA');
+        const utcToday = new Date().toISOString().split('T')[0];
+        if (orderDateStr !== localToday && orderDateStr !== utcToday) return false;
+      } else {
+        if (startDate && orderDateStr < startDate) return false;
+        if (endDate && orderDateStr > endDate) return false;
+      }
 
       // 4. Text Search (ID, customer name, phone, item product code, dress name)
       if (searchQuery.trim()) {
@@ -154,7 +160,7 @@ export const OrdersView: React.FC = () => {
 
       return true;
     });
-  }, [orders, statusFilter, paymentFilter, startDate, endDate, searchQuery]);
+  }, [orders, statusFilter, paymentFilter, datePreset, startDate, endDate, searchQuery]);
 
   // Filtered Transactions Calculation (Tab 2)
   const filteredTransactions = useMemo(() => {
@@ -164,8 +170,14 @@ export const OrdersView: React.FC = () => {
       }
 
       const txDateStr = (t.TransactionDate || (t as any).createdAt || '').split('T')[0];
-      if (startDate && txDateStr < startDate) return false;
-      if (endDate && txDateStr > endDate) return false;
+      if (datePreset === 'today') {
+        const localToday = new Date().toLocaleDateString('en-CA');
+        const utcToday = new Date().toISOString().split('T')[0];
+        if (txDateStr !== localToday && txDateStr !== utcToday) return false;
+      } else {
+        if (startDate && txDateStr < startDate) return false;
+        if (endDate && txDateStr > endDate) return false;
+      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -179,7 +191,7 @@ export const OrdersView: React.FC = () => {
 
       return true;
     });
-  }, [transactions, transactionTypeFilter, startDate, endDate, searchQuery]);
+  }, [transactions, transactionTypeFilter, datePreset, startDate, endDate, searchQuery]);
 
   // Dynamic KPI Metrics for filtered orders
   const metrics = useMemo(() => {

@@ -76,9 +76,68 @@ export const LoginScreen: React.FC = () => {
           {errorMsg && (
             <div className="mb-5 p-3 rounded-xl bg-red-950/70 border border-red-800 text-red-300 text-xs flex items-start gap-2.5 animate-fadeIn">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <span className="leading-relaxed">{errorMsg}</span>
+              <div className="leading-relaxed">
+                <div>{errorMsg}</div>
+                <div className="text-[10px] text-red-400 mt-1">
+                  Tip: Check your User ID (e.g. 1001, 1002, 1003) or Staff Name, and verify uppercase/lowercase in your password.
+                </div>
+              </div>
             </div>
           )}
+
+          {/* Quick Staff Account Selector */}
+          <div className="mb-4">
+            <span className="text-[11px] text-stone-400 font-medium block mb-1.5">
+              Select Staff Account:
+            </span>
+            <div className="grid grid-cols-3 gap-1.5 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setUserNumber('1001');
+                  setErrorMsg(null);
+                }}
+                className={`px-2 py-1.5 rounded-lg border text-left transition-all ${
+                  userNumber.trim() === '1001'
+                    ? 'bg-pink-950/70 border-pink-500 text-pink-200 ring-1 ring-pink-500/50'
+                    : 'bg-stone-900/60 border-stone-700 text-stone-300 hover:bg-stone-700/60 hover:text-white'
+                }`}
+              >
+                <div className="font-mono font-bold text-[11px]">#1001</div>
+                <div className="text-[10px] text-stone-400 truncate">Admin</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUserNumber('1002');
+                  setErrorMsg(null);
+                }}
+                className={`px-2 py-1.5 rounded-lg border text-left transition-all ${
+                  userNumber.trim() === '1002'
+                    ? 'bg-pink-950/70 border-pink-500 text-pink-200 ring-1 ring-pink-500/50'
+                    : 'bg-stone-900/60 border-stone-700 text-stone-300 hover:bg-stone-700/60 hover:text-white'
+                }`}
+              >
+                <div className="font-mono font-bold text-[11px]">#1002</div>
+                <div className="text-[10px] text-stone-400 truncate">Much (Admin)</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUserNumber('1003');
+                  setErrorMsg(null);
+                }}
+                className={`px-2 py-1.5 rounded-lg border text-left transition-all ${
+                  userNumber.trim() === '1003'
+                    ? 'bg-pink-950/70 border-pink-500 text-pink-200 ring-1 ring-pink-500/50'
+                    : 'bg-stone-900/60 border-stone-700 text-stone-300 hover:bg-stone-700/60 hover:text-white'
+                }`}
+              >
+                <div className="font-mono font-bold text-[11px]">#1003</div>
+                <div className="text-[10px] text-stone-400 truncate">May (Staff)</div>
+              </button>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -97,7 +156,7 @@ export const LoginScreen: React.FC = () => {
                     setUserNumber(e.target.value);
                     if (errorMsg) setErrorMsg(null);
                   }}
-                  placeholder="User Number, Staff ID, or Email (e.g. 1001)"
+                  placeholder="User Number (e.g. 1001, 1002, 1003)"
                   className="w-full pl-10 pr-4 py-2.5 bg-stone-900/80 border border-stone-700 rounded-xl text-white placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all font-mono-numbers text-sm"
                   autoFocus
                   required
@@ -154,10 +213,10 @@ export const LoginScreen: React.FC = () => {
             </button>
           </form>
 
-          {/* Secure access notice - completely free of any credential leaks */}
+          {/* Secure access notice */}
           <div className="mt-5 p-3.5 rounded-xl bg-stone-900/80 border border-stone-700/60 text-xs text-stone-400">
             <p className="text-[11px] leading-relaxed text-stone-400 text-center">
-              Authorized personnel only. New user accounts must be created by the store administrator inside Admin Settings.
+              Multi-staff authorized portal. Account credentials are validated directly with your encrypted Firestore cloud database.
             </p>
           </div>
         </div>

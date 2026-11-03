@@ -17,6 +17,9 @@ import {
   Shirt,
   Receipt,
   Layers,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
 } from 'lucide-react';
 
 export const PosSalesView: React.FC = () => {
@@ -33,13 +36,17 @@ export const PosSalesView: React.FC = () => {
   } = useStore();
 
   // POS State
-  const [selectedProductCode, setSelectedProductCode] = useState<string>('GD001');
+  const [selectedProductCode, setSelectedProductCode] = useState<string>('');
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
 
-  // Search filter for product selector
+  // Pagination & filter for POS product selector ("ensure there's no limited the sales product items. if it long, pls add next pages")
   const [productSearch, setProductSearch] = useState('');
+  const [posPage, setPosPage] = useState<number>(1);
+  const [posPageSize, setPosPageSize] = useState<number | 'all'>(12);
+  const [posStockFilter, setPosStockFilter] = useState<'all' | 'in_stock' | 'low_stock' | 'out_of_stock'>('all');
+  const [cashTendered, setCashTendered] = useState<string>('');
 
   // Cart
   const [cart, setCart] = useState<
@@ -66,6 +73,47 @@ export const PosSalesView: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'cod' | 'transfer'>('cash');
   const [orderNotes, setOrderNotes] = useState<string>('');
 
+  // Filtered product codes list - ordered by Product Code
+  const filteredProductList = useMemo(() => {
+    return products
+      .filter((p) => {
+        const totalStock = p.Variants.reduce((s, v) => s + v.CurrentStock, 0);
+        if (posStockFilter === 'in_stock' && totalStock === 0) return false;
+        if (posStockFilter === 'low_stock' && (totalStock > 5 || totalStock === 0)) return false;
+        if (posStockFilter === 'out_of_stock' && totalStock > 0) return false;
+
+        if (!productSearch.trim()) return true;
+        const q = productSearch.toLowerCase().trim();
+        return (
+          p.ProductCode.toLowerCase().includes(q) ||
+          p.ProductName.toLowerCase().includes(q) ||
+          p.Variants.some((v) => v.Size.toLowerCase().includes(q) || v.Color.toLowerCase().includes(q))
+        );
+      })
+      .sort((a, b) => a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [products, productSearch, posStockFilter]);
+
+  // Reset to page 1 on search or filter change
+  useEffect(() => {
+    setPosPage(1);
+  }, [productSearch, posStockFilter, posPageSize]);
+
+  const totalPosPages = posPageSize === 'all' ? 1 : Math.ceil(filteredProductList.length / posPageSize) || 1;
+  const paginatedProductList = useMemo(() => {
+    if (posPageSize === 'all') return filteredProductList;
+    const start = (posPage - 1) * posPageSize;
+    return filteredProductList.slice(start, start + posPageSize);
+  }, [filteredProductList, posPage, posPageSize]);
+
+  // Auto-select valid product code on initial load or if current is invalid
+  useEffect(() => {
+    if (filteredProductList.length > 0) {
+      if (!selectedProductCode || !products.some((p) => p.ProductCode === selectedProductCode)) {
+        setSelectedProductCode(filteredProductList[0].ProductCode);
+      }
+    }
+  }, [filteredProductList, products, selectedProductCode]);
+
   // Load available sizes when Product Code changes
   const availableSizes = useMemo(() => {
     if (!selectedProductCode) return [];
@@ -91,10 +139,9 @@ export const PosSalesView: React.FC = () => {
   }, [selectedProductCode, selectedSize, products, getAvailableColorsForCodeAndSize]);
 
   const colorsKey = availableColors.join(',');
-  // Requirement #13: Color auto-selection logic
+  // Color auto-selection logic
   useEffect(() => {
     if (availableColors.length === 1) {
-      // If only one color is available for the selected size, automatically select that color!
       if (selectedColor !== availableColors[0]) {
         setSelectedColor(availableColors[0]);
       }
@@ -116,17 +163,6 @@ export const PosSalesView: React.FC = () => {
   const currentProduct = useMemo(() => {
     return getProductByCode(selectedProductCode);
   }, [selectedProductCode, products, getProductByCode]);
-
-  // Filtered product codes list - ordered by Product Code
-  const filteredProductList = useMemo(() => {
-    return products
-      .filter((p) => {
-        if (!productSearch.trim()) return true;
-        const q = productSearch.toLowerCase();
-        return p.ProductCode.toLowerCase().includes(q) || p.ProductName.toLowerCase().includes(q);
-      })
-      .sort((a, b) => a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [products, productSearch]);
 
   // Add Item to Sale Cart
   const handleAddToCart = () => {
@@ -294,66 +330,191 @@ export const PosSalesView: React.FC = () => {
         <div className="lg:col-span-7 space-y-4">
           {/* Step 1: Select Product Code */}
           <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-stone-900 uppercase tracking-wider">
-                1. Select Product Code (SKU)
-              </label>
-              <div className="w-48 relative">
-                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2" />
-                <input
-                  type="text"
-                  placeholder="Filter codes..."
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  className="w-full pl-8 pr-2 py-1 bg-stone-50 border border-stone-200 rounded text-xs focus:bg-white"
-                />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <label className="text-xs font-bold text-stone-900 uppercase tracking-wider block">
+                  1. Select Product Code (SKU)
+                </label>
+                <span className="text-[11px] text-stone-500">
+                  Showing {filteredProductList.length === 0 ? 0 : (posPage - 1) * (posPageSize === 'all' ? filteredProductList.length : posPageSize) + 1} to{' '}
+                  {posPageSize === 'all' ? filteredProductList.length : Math.min(posPage * posPageSize, filteredProductList.length)} of{' '}
+                  {filteredProductList.length} dresses
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="w-40 sm:w-48 relative">
+                  <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2" />
+                  <input
+                    type="text"
+                    placeholder="Filter SKU or name..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="w-full pl-8 pr-2 py-1 bg-stone-50 border border-stone-200 rounded text-xs focus:bg-white"
+                  />
+                </div>
+
+                {/* Page Size Selector */}
+                <select
+                  value={posPageSize}
+                  onChange={(e) => setPosPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  className="px-2 py-1 bg-stone-50 border border-stone-200 rounded text-[11px] font-medium"
+                >
+                  <option value={12}>12 / page</option>
+                  <option value={24}>24 / page</option>
+                  <option value="all">All items</option>
+                </select>
               </div>
             </div>
 
-            {/* Product Buttons Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-              {filteredProductList.map((p) => {
-                const isSelected = selectedProductCode === p.ProductCode;
-                const totalStock = p.Variants.reduce((s, v) => s + v.CurrentStock, 0);
-
-                return (
-                  <button
-                    key={p.ProductID}
-                    type="button"
-                    onClick={() => setSelectedProductCode(p.ProductCode)}
-                    className={`p-2 rounded-lg border text-left transition-all flex items-start gap-2 ${
-                      isSelected
-                        ? 'bg-rose-50 border-rose-500 shadow-xs ring-1 ring-rose-300'
-                        : 'bg-white border-stone-200 hover:border-stone-300 hover:bg-stone-50'
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded bg-stone-100 overflow-hidden shrink-0 border border-stone-200">
-                      {p.Images[0]?.ImageURL ? (
-                        <img
-                          src={p.Images[0].ImageURL}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <Shirt className="w-4 h-4 m-auto text-stone-400 mt-2" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-mono font-bold text-xs text-rose-950 truncate">
-                        {p.ProductCode}
-                      </div>
-                      <div className="text-[11px] font-medium text-stone-800 truncate">
-                        {p.ProductName}
-                      </div>
-                      <div className="text-[10px] text-stone-400 font-mono-numbers">
-                        Stock: {totalStock}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+            {/* Quick Stock Status Filter Pills */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs pb-1">
+              <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Status:</span>
+              {(
+                [
+                  { id: 'all', label: `All (${products.length})` },
+                  { id: 'in_stock', label: 'In Stock' },
+                  { id: 'low_stock', label: 'Low Stock' },
+                  { id: 'out_of_stock', label: 'Sold Out' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setPosStockFilter(tab.id)}
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                    posStockFilter === tab.id
+                      ? 'bg-rose-600 text-white font-bold shadow-2xs'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
+
+            {/* Product Buttons Grid */}
+            {paginatedProductList.length === 0 ? (
+              <div className="p-8 text-center text-stone-400 bg-stone-50 rounded-lg border border-stone-200 text-xs">
+                No dresses found matching "{productSearch}".
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+                {paginatedProductList.map((p) => {
+                  const isSelected = selectedProductCode === p.ProductCode;
+                  const totalStock = p.Variants.reduce((s, v) => s + v.CurrentStock, 0);
+                  const isSoldOut = totalStock === 0;
+                  const isLow = totalStock > 0 && totalStock <= 5;
+
+                  return (
+                    <button
+                      key={p.ProductID}
+                      type="button"
+                      onClick={() => setSelectedProductCode(p.ProductCode)}
+                      className={`p-2 rounded-lg border text-left transition-all flex items-start gap-2 cursor-pointer ${
+                        isSelected
+                          ? 'bg-rose-50 border-rose-500 shadow-xs ring-1 ring-rose-300'
+                          : 'bg-white border-stone-200 hover:border-stone-300 hover:bg-stone-50'
+                      }`}
+                    >
+                      <div className="w-9 h-9 rounded bg-stone-100 overflow-hidden shrink-0 border border-stone-200 relative">
+                        {p.Images[0]?.ImageURL ? (
+                          <img
+                            src={p.Images[0].ImageURL}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Shirt className="w-4 h-4 m-auto text-stone-400 mt-2.5" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-mono font-bold text-xs text-rose-950 truncate">
+                            {p.ProductCode}
+                          </span>
+                          <span
+                            className={`text-[9px] font-bold px-1 py-0.2 rounded shrink-0 ${
+                              isSoldOut
+                                ? 'bg-red-100 text-red-700'
+                                : isLow
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-emerald-50 text-emerald-700'
+                            }`}
+                          >
+                            {isSoldOut ? 'Sold Out' : `${totalStock} pcs`}
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-medium text-stone-800 truncate">
+                          {p.ProductName}
+                        </div>
+                        <div className="text-[10px] text-stone-400 font-mono-numbers">
+                          {p.Variants.length} variant{p.Variants.length !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Pagination Controls ("ensure there's no limited the sales product items. if it long, pls add next pages") */}
+            {posPageSize !== 'all' && totalPosPages > 1 && (
+              <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
+                <span className="text-[11px] text-stone-500 font-mono">
+                  Page {posPage} of {totalPosPages}
+                </span>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPosPage((prev) => Math.max(1, prev - 1))}
+                    disabled={posPage <= 1}
+                    className="px-2 py-1 border border-stone-200 rounded text-xs text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span>Prev</span>
+                  </button>
+
+                  {/* Page pills (up to 5 pages shown) */}
+                  <div className="hidden sm:flex items-center gap-1">
+                    {Array.from({ length: totalPosPages }, (_, i) => i + 1)
+                      .filter((p) => p === 1 || p === totalPosPages || Math.abs(p - posPage) <= 1)
+                      .map((p, idx, arr) => {
+                        const prevPage = arr[idx - 1];
+                        const showEllipsis = prevPage && p - prevPage > 1;
+                        return (
+                          <React.Fragment key={p}>
+                            {showEllipsis && <span className="px-1 text-stone-400 text-xs">...</span>}
+                            <button
+                              type="button"
+                              onClick={() => setPosPage(p)}
+                              className={`w-6 h-6 rounded text-xs font-mono font-medium flex items-center justify-center cursor-pointer ${
+                                posPage === p
+                                  ? 'bg-rose-600 text-white font-bold'
+                                  : 'text-stone-600 hover:bg-stone-100'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          </React.Fragment>
+                        );
+                      })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setPosPage((prev) => Math.min(totalPosPages, prev + 1))}
+                    disabled={posPage >= totalPosPages}
+                    className="px-2 py-1 border border-stone-200 rounded text-xs text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Next</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Step 2 & 3: Size & Color Auto-Selection (Section 12 & 13) */}
@@ -657,6 +818,32 @@ export const PosSalesView: React.FC = () => {
                   ))}
                 </div>
               </div>
+
+              {/* Cash payment change calculator */}
+              {paymentMethod === 'cash' && (
+                <div className="p-2.5 bg-stone-50 rounded-lg border border-stone-200 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-stone-700">Cash Received ($):</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      placeholder={grandTotal.toFixed(2)}
+                      value={cashTendered}
+                      onChange={(e) => setCashTendered(e.target.value)}
+                      className="w-24 px-2 py-1 text-right bg-white border border-stone-300 rounded text-xs font-mono-numbers font-bold"
+                    />
+                  </div>
+                  {cashTendered && parseFloat(cashTendered) >= grandTotal && (
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-200/60">
+                      <span className="text-emerald-700 font-semibold">Change to Return:</span>
+                      <span className="font-mono-numbers font-bold text-emerald-800 text-sm">
+                        ${(parseFloat(cashTendered) - grandTotal).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Discount Input */}
               <div className="flex items-center justify-between gap-3 pt-1">

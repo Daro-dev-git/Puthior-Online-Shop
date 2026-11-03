@@ -139,7 +139,7 @@ export const DashboardView: React.FC<{
     return Object.values(typeMap).sort((a, b) => b.revenue - a.revenue);
   }, [orders, products, getDressTypeName]);
 
-  // Top Selling Products
+  // Top Selling Products with active date range filter
   const topSellingProducts = useMemo(() => {
     const map: Record<
       string,
@@ -154,7 +154,36 @@ export const DashboardView: React.FC<{
       }
     > = {};
 
-    orders.forEach((o) => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const todayLocal = now.toLocaleDateString('en-CA');
+
+    const past7 = new Date(now);
+    past7.setDate(past7.getDate() - 7);
+    const past7Str = past7.toISOString().split('T')[0];
+
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const yearStart = `${now.getFullYear()}-01-01`;
+
+    const filtered = orders.filter((o) => {
+      const d = (o.OrderDate || (o as any).createdAt || '').split('T')[0];
+      if (!d) return false;
+      if (topSellingRange === 'today') {
+        return d === todayStr || d === todayLocal;
+      }
+      if (topSellingRange === 'week') {
+        return d >= past7Str;
+      }
+      if (topSellingRange === 'month') {
+        return d >= monthStart;
+      }
+      if (topSellingRange === 'year') {
+        return d >= yearStart;
+      }
+      return true;
+    });
+
+    filtered.forEach((o) => {
       o.Items.forEach((item) => {
         const prod = products.find((p) => p.ProductCode === item.ProductCode);
         const dressType = prod ? getDressTypeName(prod.DressTypeID) : 'Dress';
@@ -178,7 +207,7 @@ export const DashboardView: React.FC<{
     });
 
     return Object.values(map).sort((a, b) => b.units - a.units);
-  }, [orders, products, getDressTypeName]);
+  }, [orders, products, getDressTypeName, topSellingRange]);
 
   // Top Selling Sizes
   const topSellingSizes = useMemo(() => {
@@ -718,7 +747,7 @@ export const DashboardView: React.FC<{
                     </td>
                   </tr>
                 ) : (
-                  topSellingProducts.slice(0, 5).map((item, idx) => (
+                  topSellingProducts.slice(0, 10).map((item, idx) => (
                     <tr key={item.code} className="hover:bg-stone-50/70 transition-colors">
                       <td className="py-2.5 font-mono-numbers font-medium text-stone-500">
                         #{idx + 1}
@@ -763,6 +792,22 @@ export const DashboardView: React.FC<{
               </tbody>
             </table>
           </div>
+
+          {topSellingProducts.length > 0 && (
+            <div className="pt-3 border-t border-stone-100 flex items-center justify-between text-xs">
+              <span className="text-stone-500">
+                Showing top {Math.min(10, topSellingProducts.length)} of {topSellingProducts.length} selling products ({topSellingRange})
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentView('reports')}
+                className="text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer"
+              >
+                <span>Full Selling Products & Reports</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Sales by Dress Type Breakdown */}

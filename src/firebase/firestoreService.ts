@@ -159,7 +159,7 @@ export async function seedInitialFirestoreData(): Promise<void> {
 export function subscribeProducts(
   onData: (products: Product[]) => void,
   onError?: (err: Error) => void,
-  maxLimit: number = 100
+  maxLimit: number = 2000
 ): Unsubscribe {
   const colRef = collection(db, COLLECTIONS.PRODUCTS);
   const q = maxLimit > 0 ? query(colRef, limit(maxLimit)) : colRef;

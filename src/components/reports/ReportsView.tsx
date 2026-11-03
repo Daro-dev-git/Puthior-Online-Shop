@@ -17,26 +17,129 @@ import {
   Receipt,
   X,
   Filter,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Flame,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowUpDown,
 } from 'lucide-react';
+
+interface PaginationBarProps {
+  currentPage: number;
+  pageSize: number | 'all';
+  totalItems: number;
+  onPageChange: (p: number) => void;
+  onPageSizeChange: (s: number | 'all') => void;
+}
+
+const PaginationBar: React.FC<PaginationBarProps> = ({
+  currentPage,
+  pageSize,
+  totalItems,
+  onPageChange,
+  onPageSizeChange,
+}) => {
+  const totalPages = pageSize === 'all' ? 1 : Math.ceil(totalItems / (pageSize as number)) || 1;
+  const startItem = totalItems === 0 ? 0 : pageSize === 'all' ? 1 : (currentPage - 1) * (pageSize as number) + 1;
+  const endItem = pageSize === 'all' ? totalItems : Math.min(currentPage * (pageSize as number), totalItems);
+
+  return (
+    <div className="p-3 bg-stone-50 border-t border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+      <div className="flex items-center gap-2 text-stone-600">
+        <span>
+          Showing <strong className="text-stone-900">{startItem}</strong> to{' '}
+          <strong className="text-stone-900">{endItem}</strong> of{' '}
+          <strong className="text-stone-900">{totalItems}</strong> items
+        </span>
+        <div className="flex items-center gap-1.5 ml-2 border-l border-stone-200 pl-3">
+          <span className="text-stone-400">Rows:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+              onPageSizeChange(val);
+              onPageChange(1);
+            }}
+            className="bg-white border border-stone-300 rounded px-1.5 py-0.5 text-xs font-semibold cursor-pointer text-stone-700"
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+      </div>
+
+      {pageSize !== 'all' && totalPages > 1 && (
+        <div className="flex items-center gap-1 self-end sm:self-auto">
+          <button
+            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+            disabled={currentPage === 1}
+            className="px-2.5 py-1 rounded border border-stone-300 bg-white text-stone-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-stone-50 font-medium cursor-pointer flex items-center gap-1"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            <span>Prev</span>
+          </button>
+          <span className="px-2 text-stone-600 font-semibold font-mono text-xs">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+            disabled={currentPage === totalPages}
+            className="px-2.5 py-1 rounded border border-stone-300 bg-white text-stone-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-stone-50 font-medium cursor-pointer flex items-center gap-1"
+          >
+            <span>Next</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ReportsView: React.FC = () => {
   const { orders, transactions, products, isAdmin, getDressTypeName, showToast } = useStore();
 
   const [activeReportTab, setActiveReportTab] = useState<
-    'daily' | 'weekly' | 'monthly' | 'sales' | 'profit' | 'bestsellers'
+    'daily' | 'selling_out' | 'weekly' | 'monthly' | 'sales' | 'profit' | 'bestsellers'
   >('daily');
 
   // Date Filtering (defaults to today, with 1-click Oct 21 preset)
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const localTodayStr = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [dateRangeMode, setDateRangeMode] = useState<'single' | 'range'>('single');
   const [startDate, setStartDate] = useState<string>(todayStr);
   const [endDate, setEndDate] = useState<string>(todayStr);
   const [selectedPreset, setSelectedPreset] = useState<string>('today');
 
+  // Selling Out & Product Sales Analysis Table Controls
+  const [sellingSearch, setSellingSearch] = useState('');
+  const [sellingStatusFilter, setSellingStatusFilter] = useState<'all' | 'soldout' | 'critical' | 'low' | 'instock'>('all');
+  const [sellingSortBy, setSellingSortBy] = useState<'soldQty' | 'revenue' | 'profit' | 'stock'>('soldQty');
+  const [sellingPage, setSellingPage] = useState(1);
+  const [sellingPageSize, setSellingPageSize] = useState<number | 'all'>(25);
+
+  // Pagination for other report tables
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersPageSize, setOrdersPageSize] = useState<number | 'all'>(25);
+
+  const [profitPage, setProfitPage] = useState(1);
+  const [profitPageSize, setProfitPageSize] = useState<number | 'all'>(25);
+
+  const [bestsellerPage, setBestsellerPage] = useState(1);
+  const [bestsellerPageSize, setBestsellerPageSize] = useState<number | 'all'>(25);
+
   // Quick preset selector
   const handlePresetSelect = (preset: 'today' | 'oct21' | 'yesterday' | 'week' | 'month' | 'all') => {
     setSelectedPreset(preset);
+    setSellingPage(1);
+    setOrdersPage(1);
+    setProfitPage(1);
+    setBestsellerPage(1);
+
     const now = new Date();
     const tStr = now.toISOString().split('T')[0];
 
@@ -76,11 +179,14 @@ export const ReportsView: React.FC = () => {
     }
   };
 
-  // Filtered orders based on selected date or date range
+  // Filtered orders based on selected date or date range (with dual UTC & local date support)
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       const dStr = (o.OrderDate || (o as any).createdAt || '').split('T')[0];
       if (dateRangeMode === 'single') {
+        if (selectedPreset === 'today') {
+          return dStr === selectedDate || dStr === localTodayStr || dStr === todayStr;
+        }
         return dStr === selectedDate;
       } else {
         if (startDate && dStr < startDate) return false;
@@ -88,13 +194,16 @@ export const ReportsView: React.FC = () => {
         return true;
       }
     });
-  }, [orders, dateRangeMode, selectedDate, startDate, endDate]);
+  }, [orders, dateRangeMode, selectedPreset, selectedDate, startDate, endDate, localTodayStr, todayStr]);
 
   // Filtered transactions based on selected date or range
   const filteredTxs = useMemo(() => {
     return transactions.filter((t) => {
       const dStr = (t.TransactionDate || (t as any).createdAt || '').split('T')[0];
       if (dateRangeMode === 'single') {
+        if (selectedPreset === 'today') {
+          return dStr === selectedDate || dStr === localTodayStr || dStr === todayStr;
+        }
         return dStr === selectedDate;
       } else {
         if (startDate && dStr < startDate) return false;
@@ -102,7 +211,7 @@ export const ReportsView: React.FC = () => {
         return true;
       }
     });
-  }, [transactions, dateRangeMode, selectedDate, startDate, endDate]);
+  }, [transactions, dateRangeMode, selectedPreset, selectedDate, startDate, endDate, localTodayStr, todayStr]);
 
   // Daily / Selected Period Summary Calculations
   const periodSummary = useMemo(() => {
@@ -385,6 +494,188 @@ export const ReportsView: React.FC = () => {
     return Object.values(map).sort((a, b) => b.soldQty - a.soldQty);
   }, [filteredOrders]);
 
+  // Selling Out & Comprehensive Product Sales Analysis Memo
+  const sellingOutReport = useMemo(() => {
+    // 1. Gather all sales metrics by product code for the filtered period
+    const salesMap: Record<
+      string,
+      {
+        soldQty: number;
+        revenue: number;
+        cost: number;
+        profit: number;
+        name?: string;
+        price?: number;
+      }
+    > = {};
+
+    filteredOrders.forEach((o) => {
+      (o.Items || []).forEach((item) => {
+        const code = item.ProductCode || 'UNKNOWN';
+        if (!salesMap[code]) {
+          salesMap[code] = {
+            soldQty: 0,
+            revenue: 0,
+            cost: 0,
+            profit: 0,
+            name: item.ProductName,
+            price: item.UnitPrice,
+          };
+        }
+        salesMap[code].soldQty += item.Quantity || 0;
+        salesMap[code].revenue += item.Subtotal || 0;
+        salesMap[code].cost += (item.ActualPrice || 0) * (item.Quantity || 0);
+        salesMap[code].profit +=
+          item.Profit || ((item.UnitPrice || 0) - (item.ActualPrice || 0)) * (item.Quantity || 0);
+      });
+    });
+
+    // 2. Build list combining catalog products + any sales-only items
+    const productCodeSet = new Set<string>();
+    const list: Array<{
+      code: string;
+      name: string;
+      dressType: string;
+      image?: string;
+      unitPrice: number;
+      unitCost: number;
+      soldQty: number;
+      revenue: number;
+      cost: number;
+      profit: number;
+      margin: number;
+      remainingStock: number;
+      status: 'soldout' | 'critical' | 'low' | 'instock';
+      statusLabel: string;
+    }> = [];
+
+    // Catalog products first
+    products.forEach((p) => {
+      productCodeSet.add(p.ProductCode);
+      const metrics = salesMap[p.ProductCode] || { soldQty: 0, revenue: 0, cost: 0, profit: 0 };
+      const remainingStock = (p.Variants || []).reduce((sum, v) => sum + (v.CurrentStock || 0), 0);
+
+      let status: 'soldout' | 'critical' | 'low' | 'instock' = 'instock';
+      let statusLabel = 'In Stock';
+
+      if (remainingStock === 0) {
+        status = 'soldout';
+        statusLabel = metrics.soldQty > 0 ? 'Sold Out' : 'Out of Stock';
+      } else if (remainingStock <= 5) {
+        status = 'critical';
+        statusLabel = 'Selling Fast / Critical';
+      } else if (remainingStock <= 15) {
+        status = 'low';
+        statusLabel = 'Low Stock';
+      } else {
+        status = 'instock';
+        statusLabel = 'In Stock';
+      }
+
+      const margin = metrics.cost > 0 ? (metrics.profit / metrics.cost) * 100 : metrics.revenue > 0 ? 100 : 0;
+
+      const firstVariant = p.Variants?.[0];
+      const defaultSellingPrice = firstVariant?.SellingPrice || metrics.price || 0;
+      const defaultActualPrice = firstVariant?.ActualPrice || 0;
+
+      list.push({
+        code: p.ProductCode,
+        name: p.ProductName,
+        dressType: getDressTypeName(p.DressTypeID),
+        image: p.Images?.[0]?.ImageURL,
+        unitPrice: defaultSellingPrice,
+        unitCost: defaultActualPrice,
+        soldQty: metrics.soldQty,
+        revenue: metrics.revenue,
+        cost: metrics.cost,
+        profit: metrics.profit,
+        margin,
+        remainingStock,
+        status,
+        statusLabel,
+      });
+    });
+
+    // Also include any sold items not currently in catalog
+    Object.entries(salesMap).forEach(([code, metrics]) => {
+      if (!productCodeSet.has(code)) {
+        list.push({
+          code,
+          name: metrics.name || code,
+          dressType: 'Standard Dress',
+          image: undefined,
+          unitPrice: metrics.price || 0,
+          unitCost: metrics.soldQty > 0 ? metrics.cost / metrics.soldQty : 0,
+          soldQty: metrics.soldQty,
+          revenue: metrics.revenue,
+          cost: metrics.cost,
+          profit: metrics.profit,
+          margin: metrics.cost > 0 ? (metrics.profit / metrics.cost) * 100 : 100,
+          remainingStock: 0,
+          status: 'soldout',
+          statusLabel: 'Sold Out (Archived SKU)',
+        });
+      }
+    });
+
+    return list;
+  }, [products, filteredOrders, getDressTypeName]);
+
+  // Filtered & Sorted Selling Out Report
+  const filteredSellingOut = useMemo(() => {
+    return sellingOutReport
+      .filter((item) => {
+        // Status filter
+        if (sellingStatusFilter !== 'all') {
+          if (sellingStatusFilter === 'soldout' && item.status !== 'soldout') return false;
+          if (sellingStatusFilter === 'critical' && item.status !== 'critical') return false;
+          if (sellingStatusFilter === 'low' && item.status !== 'low') return false;
+          if (sellingStatusFilter === 'instock' && item.status !== 'instock') return false;
+        }
+        // Text search
+        if (sellingSearch.trim()) {
+          const q = sellingSearch.toLowerCase().trim();
+          const codeMatch = item.code.toLowerCase().includes(q);
+          const nameMatch = item.name.toLowerCase().includes(q);
+          const typeMatch = item.dressType.toLowerCase().includes(q);
+          if (!codeMatch && !nameMatch && !typeMatch) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sellingSortBy === 'soldQty') return b.soldQty - a.soldQty;
+        if (sellingSortBy === 'revenue') return b.revenue - a.revenue;
+        if (sellingSortBy === 'profit') return b.profit - a.profit;
+        if (sellingSortBy === 'stock') return a.remainingStock - b.remainingStock; // lowest stock first
+        return 0;
+      });
+  }, [sellingOutReport, sellingStatusFilter, sellingSearch, sellingSortBy]);
+
+  // Paginated slices for all reports tables
+  const paginatedOrders = useMemo(() => {
+    if (ordersPageSize === 'all') return filteredOrders;
+    const start = (ordersPage - 1) * (ordersPageSize as number);
+    return filteredOrders.slice(start, start + (ordersPageSize as number));
+  }, [filteredOrders, ordersPage, ordersPageSize]);
+
+  const paginatedSellingOut = useMemo(() => {
+    if (sellingPageSize === 'all') return filteredSellingOut;
+    const start = (sellingPage - 1) * (sellingPageSize as number);
+    return filteredSellingOut.slice(start, start + (sellingPageSize as number));
+  }, [filteredSellingOut, sellingPage, sellingPageSize]);
+
+  const paginatedProfit = useMemo(() => {
+    if (profitPageSize === 'all') return profitReport;
+    const start = (profitPage - 1) * (profitPageSize as number);
+    return profitReport.slice(start, start + (profitPageSize as number));
+  }, [profitReport, profitPage, profitPageSize]);
+
+  const paginatedBestSellers = useMemo(() => {
+    if (bestsellerPageSize === 'all') return bestSellers;
+    const start = (bestsellerPage - 1) * (bestsellerPageSize as number);
+    return bestSellers.slice(start, start + (bestsellerPageSize as number));
+  }, [bestSellers, bestsellerPage, bestsellerPageSize]);
+
   // Export current report to CSV
   const handleExportCSV = () => {
     let headers: string[] = [];
@@ -405,6 +696,37 @@ export const ReportsView: React.FC = () => {
           periodSummary.totalOUT,
         ].join(','),
       ];
+    } else if (activeReportTab === 'selling_out') {
+      headers = [
+        'Product SKU',
+        'Dress Name',
+        'Category',
+        'Selling Price',
+        'Unit Cost',
+        'Quantity Sold',
+        'Gross Revenue',
+        'Cost',
+        'Net Profit',
+        'Margin %',
+        'Stock Remaining',
+        'Stock Status',
+      ];
+      rows = filteredSellingOut.map((p) =>
+        [
+          `"${p.code}"`,
+          `"${p.name.replace(/"/g, '""')}"`,
+          `"${p.dressType}"`,
+          p.unitPrice.toFixed(2),
+          p.unitCost.toFixed(2),
+          p.soldQty,
+          p.revenue.toFixed(2),
+          p.cost.toFixed(2),
+          p.profit.toFixed(2),
+          `"${p.margin.toFixed(1)}%"`,
+          p.remainingStock,
+          `"${p.statusLabel}"`,
+        ].join(',')
+      );
     } else if (activeReportTab === 'weekly') {
       headers = ['Week Period', 'Orders', 'Items Sold', 'Revenue', 'Cost', 'Profit', 'Margin %', 'Stock IN', 'Stock OUT'];
       rows = dynamicWeeklyData.map((w) => {
@@ -657,6 +979,7 @@ export const ReportsView: React.FC = () => {
       <div className="bg-white p-1 rounded-xl border border-stone-200 shadow-xs flex items-center gap-1 overflow-x-auto text-xs">
         {[
           { id: 'daily', label: 'Daily / Period Summary', adminOnly: false },
+          { id: 'selling_out', label: 'Selling Out & Product Sales', adminOnly: false },
           { id: 'weekly', label: 'Weekly Summary', adminOnly: false },
           { id: 'monthly', label: 'Monthly Summary', adminOnly: false },
           { id: 'profit', label: 'Profit & Margins Report', adminOnly: true },
@@ -852,7 +1175,7 @@ export const ReportsView: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredOrders.map((o) => (
+                    paginatedOrders.map((o) => (
                       <tr key={o.OrderID} className="hover:bg-stone-50/80">
                         <td className="py-2.5 px-3 font-mono font-bold text-rose-950">{o.OrderID}</td>
                         <td className="py-2.5 px-3 font-mono text-stone-500 text-[11px]">
@@ -878,6 +1201,276 @@ export const ReportsView: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
+            <PaginationBar
+              currentPage={ordersPage}
+              pageSize={ordersPageSize}
+              totalItems={filteredOrders.length}
+              onPageChange={setOrdersPage}
+              onPageSizeChange={setOrdersPageSize}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Selling Out & Comprehensive Product Sales Analysis */}
+      {activeReportTab === 'selling_out' && (
+        <div className="space-y-4">
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs">
+              <span className="text-stone-400 block text-[11px] font-semibold">Active Catalog</span>
+              <span className="text-xl font-bold font-mono-numbers text-stone-900">{products.length} Designs</span>
+              <span className="text-[10px] text-stone-500 block">Dresses in inventory</span>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs">
+              <span className="text-rose-600 block text-[11px] font-semibold flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Sold Out</span>
+              </span>
+              <span className="text-xl font-bold font-mono-numbers text-rose-800">
+                {sellingOutReport.filter((p) => p.status === 'soldout').length}
+              </span>
+              <span className="text-[10px] text-rose-600 block">0 stock remaining</span>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs">
+              <span className="text-amber-600 block text-[11px] font-semibold flex items-center gap-1">
+                <Flame className="w-3.5 h-3.5 text-amber-500" />
+                <span>Selling Fast</span>
+              </span>
+              <span className="text-xl font-bold font-mono-numbers text-amber-800">
+                {sellingOutReport.filter((p) => p.status === 'critical').length}
+              </span>
+              <span className="text-[10px] text-amber-600 block">&le; 5 units left</span>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs">
+              <span className="text-emerald-600 block text-[11px] font-semibold flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Dresses Sold ({periodSummary.periodLabel})</span>
+              </span>
+              <span className="text-xl font-bold font-mono-numbers text-emerald-800">
+                {sellingOutReport.reduce((acc, p) => acc + p.soldQty, 0)} pcs
+              </span>
+              <span className="text-[10px] text-emerald-600 block">
+                ${sellingOutReport.reduce((acc, p) => acc + p.revenue, 0).toFixed(2)} sales
+              </span>
+            </div>
+          </div>
+
+          {/* Table Container */}
+          <div className="bg-white rounded-xl border border-stone-200 shadow-xs overflow-hidden">
+            {/* Table Filter Controls */}
+            <div className="p-4 border-b border-stone-200 bg-stone-50 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                  <input
+                    type="text"
+                    value={sellingSearch}
+                    onChange={(e) => {
+                      setSellingSearch(e.target.value);
+                      setSellingPage(1);
+                    }}
+                    placeholder="Search dress SKU or name..."
+                    className="pl-8 pr-3 py-1.5 bg-white border border-stone-300 rounded-lg text-xs placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-rose-500 w-52"
+                  />
+                  {sellingSearch && (
+                    <button
+                      onClick={() => setSellingSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Status Pills */}
+                <div className="flex items-center gap-1 bg-white p-0.5 border border-stone-200 rounded-lg">
+                  {[
+                    { id: 'all', label: 'All' },
+                    { id: 'soldout', label: 'Sold Out' },
+                    { id: 'critical', label: 'Selling Fast (≤5)' },
+                    { id: 'low', label: 'Low Stock (≤15)' },
+                    { id: 'instock', label: 'In Stock' },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        setSellingStatusFilter(s.id as any);
+                        setSellingPage(1);
+                      }}
+                      className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                        sellingStatusFilter === s.id
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sort selector */}
+              <div className="flex items-center gap-2 self-end md:self-auto">
+                <span className="text-stone-400 flex items-center gap-1 text-[11px]">
+                  <ArrowUpDown className="w-3 h-3" />
+                  <span>Sort by:</span>
+                </span>
+                <select
+                  value={sellingSortBy}
+                  onChange={(e) => {
+                    setSellingSortBy(e.target.value as any);
+                    setSellingPage(1);
+                  }}
+                  className="bg-white border border-stone-300 rounded-lg px-2.5 py-1 text-xs font-semibold cursor-pointer text-stone-700"
+                >
+                  <option value="soldQty">Units Sold (High → Low)</option>
+                  <option value="revenue">Gross Revenue (High → Low)</option>
+                  <option value="profit">Net Profit (High → Low)</option>
+                  <option value="stock">Remaining Stock (Low → High)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Product Selling Out Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold">
+                  <tr>
+                    <th className="py-2.5 px-3 w-10 text-center">#</th>
+                    <th className="py-2.5 px-3">Dress Product</th>
+                    <th className="py-2.5 px-3">Category</th>
+                    <th className="py-2.5 px-3 text-right">Unit Price</th>
+                    {isAdmin && <th className="py-2.5 px-3 text-right">Cost</th>}
+                    <th className="py-2.5 px-3 text-center">Units Sold</th>
+                    <th className="py-2.5 px-3 text-right">Revenue</th>
+                    {isAdmin && <th className="py-2.5 px-3 text-right font-bold text-emerald-700">Profit</th>}
+                    {isAdmin && <th className="py-2.5 px-3 text-right">Margin %</th>}
+                    <th className="py-2.5 px-3 text-center">Stock Left</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {paginatedSellingOut.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="py-8 text-center text-stone-400">
+                        No products match the selected criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedSellingOut.map((p, idx) => {
+                      const rank = sellingPageSize === 'all' ? idx + 1 : (sellingPage - 1) * (sellingPageSize as number) + idx + 1;
+                      return (
+                        <tr key={p.code} className="hover:bg-stone-50/70 transition-colors">
+                          <td className="py-2.5 px-3 text-center font-bold text-stone-400 font-mono text-[11px]">
+                            {rank}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-2.5">
+                              {p.image ? (
+                                <img
+                                  src={p.image}
+                                  alt={p.name}
+                                  className="w-9 h-9 rounded-md object-cover border border-stone-200 shrink-0 bg-stone-100"
+                                />
+                              ) : (
+                                <div className="w-9 h-9 rounded-md bg-stone-100 border border-stone-200 flex items-center justify-center shrink-0 text-stone-400 font-bold text-[10px]">
+                                  {p.code}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-rose-950 text-[11px] bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                                    {p.code}
+                                  </span>
+                                  <span className="font-semibold text-stone-900 truncate max-w-[180px]">{p.name}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-stone-600 text-[11px]">{p.dressType}</td>
+                          <td className="py-2.5 px-3 text-right font-mono-numbers font-semibold text-stone-800">
+                            ${p.unitPrice.toFixed(2)}
+                          </td>
+                          {isAdmin && (
+                            <td className="py-2.5 px-3 text-right font-mono-numbers text-stone-500">
+                              ${p.unitCost.toFixed(2)}
+                            </td>
+                          )}
+                          <td className="py-2.5 px-3 text-center font-mono-numbers font-bold text-stone-900">
+                            {p.soldQty > 0 ? (
+                              <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 font-bold">
+                                {p.soldQty} pcs
+                              </span>
+                            ) : (
+                              <span className="text-stone-400">0</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono-numbers font-bold text-stone-900">
+                            ${p.revenue.toFixed(2)}
+                          </td>
+                          {isAdmin && (
+                            <td className="py-2.5 px-3 text-right font-mono-numbers font-bold text-emerald-700">
+                              +${p.profit.toFixed(2)}
+                            </td>
+                          )}
+                          {isAdmin && (
+                            <td className="py-2.5 px-3 text-right font-mono-numbers font-semibold text-emerald-800">
+                              {p.margin.toFixed(1)}%
+                            </td>
+                          )}
+                          <td className="py-2.5 px-3 text-center font-mono-numbers font-bold">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] ${
+                                p.remainingStock === 0
+                                  ? 'bg-rose-100 text-rose-800 font-bold'
+                                  : p.remainingStock <= 5
+                                  ? 'bg-amber-100 text-amber-800 font-bold'
+                                  : p.remainingStock <= 15
+                                  ? 'bg-yellow-50 text-yellow-800'
+                                  : 'bg-stone-100 text-stone-800'
+                              }`}
+                            >
+                              {p.remainingStock}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
+                                p.status === 'soldout'
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                  : p.status === 'critical'
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : p.status === 'low'
+                                  ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
+                                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              }`}
+                            >
+                              {p.status === 'critical' && <Flame className="w-2.5 h-2.5 text-amber-600" />}
+                              <span>{p.statusLabel}</span>
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination controls */}
+            <PaginationBar
+              currentPage={sellingPage}
+              pageSize={sellingPageSize}
+              totalItems={filteredSellingOut.length}
+              onPageChange={setSellingPage}
+              onPageSizeChange={setSellingPageSize}
+            />
           </div>
         </div>
       )}
@@ -1065,7 +1658,7 @@ export const ReportsView: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    profitReport.map((p) => {
+                    paginatedProfit.map((p) => {
                       const margin = p.cost > 0 ? ((p.profit / p.cost) * 100).toFixed(1) + '%' : '100%';
                       return (
                         <tr key={p.code} className="hover:bg-stone-50/70">
@@ -1083,6 +1676,14 @@ export const ReportsView: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
+            <PaginationBar
+              currentPage={profitPage}
+              pageSize={profitPageSize}
+              totalItems={profitReport.length}
+              onPageChange={setProfitPage}
+              onPageSizeChange={setProfitPageSize}
+            />
           </div>
         </div>
       )}
@@ -1112,32 +1713,43 @@ export const ReportsView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
-                  {bestSellers.length === 0 ? (
+                  {paginatedBestSellers.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-8 text-center text-stone-400">
                         No sales recorded in the selected period.
                       </td>
                     </tr>
                   ) : (
-                    bestSellers.map((b, idx) => (
-                      <tr key={`${b.code}-${b.size}-${b.color}`} className="hover:bg-stone-50/70">
-                        <td className="py-3 px-4 text-center font-bold text-stone-500">#{idx + 1}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-rose-950">{b.code}</td>
-                        <td className="py-3 px-4 font-medium text-stone-900">{b.name}</td>
-                        <td className="py-3 px-4 font-mono text-stone-600">{b.size} / {b.color}</td>
-                        <td className="py-3 px-4 text-center font-mono-numbers font-bold text-stone-900">{b.soldQty}</td>
-                        <td className="py-3 px-4 text-right font-mono-numbers font-bold text-stone-900">${b.revenue.toFixed(2)}</td>
-                        {isAdmin && (
-                          <td className="py-3 px-4 text-right font-mono-numbers font-bold text-emerald-700">
-                            +${b.profit.toFixed(2)}
-                          </td>
-                        )}
-                      </tr>
-                    ))
+                    paginatedBestSellers.map((b, idx) => {
+                      const rank = bestsellerPageSize === 'all' ? idx + 1 : (bestsellerPage - 1) * (bestsellerPageSize as number) + idx + 1;
+                      return (
+                        <tr key={`${b.code}-${b.size}-${b.color}`} className="hover:bg-stone-50/70">
+                          <td className="py-3 px-4 text-center font-bold text-stone-500">#{rank}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-rose-950">{b.code}</td>
+                          <td className="py-3 px-4 font-medium text-stone-900">{b.name}</td>
+                          <td className="py-3 px-4 font-mono text-stone-600">{b.size} / {b.color}</td>
+                          <td className="py-3 px-4 text-center font-mono-numbers font-bold text-stone-900">{b.soldQty}</td>
+                          <td className="py-3 px-4 text-right font-mono-numbers font-bold text-stone-900">${b.revenue.toFixed(2)}</td>
+                          {isAdmin && (
+                            <td className="py-3 px-4 text-right font-mono-numbers font-bold text-emerald-700">
+                              +${b.profit.toFixed(2)}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             </div>
+
+            <PaginationBar
+              currentPage={bestsellerPage}
+              pageSize={bestsellerPageSize}
+              totalItems={bestSellers.length}
+              onPageChange={setBestsellerPage}
+              onPageSizeChange={setBestsellerPageSize}
+            />
           </div>
         </div>
       )}

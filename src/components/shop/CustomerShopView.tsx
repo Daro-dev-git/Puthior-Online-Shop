@@ -15,6 +15,8 @@ import {
   Minus,
   ArrowRight,
   ShieldCheck,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 export const CustomerShopView: React.FC = () => {
@@ -39,6 +41,8 @@ export const CustomerShopView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [selectedPriceCat, setSelectedPriceCat] = useState('all');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(12);
 
   // Selected dress modal for customer
   const [activeDress, setActiveDress] = useState<Product | null>(null);
@@ -85,6 +89,17 @@ export const CustomerShopView: React.FC = () => {
       return true;
     }).sort((a, b) => a.ProductCode.localeCompare(b.ProductCode, undefined, { numeric: true, sensitivity: 'base' }));
   }, [products, selectedType, selectedPriceCat, searchQuery, priceCategories]);
+
+  // Reset to page 1 on filter or search changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedType, selectedPriceCat]);
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredProducts.slice(start, start + itemsPerPage);
+  }, [filteredProducts, currentPage, itemsPerPage]);
 
   // Open Product Modal
   const handleOpenDress = (product: Product) => {
@@ -267,90 +282,146 @@ export const CustomerShopView: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredProducts.map((p) => {
-            const typeName = getDressTypeName(p.DressTypeID);
-            const minPrice = Math.min(...p.Variants.map((v) => v.SellingPrice));
-            const maxPrice = Math.max(...p.Variants.map((v) => v.SellingPrice));
-            const priceLabel =
-              minPrice === maxPrice ? `$${minPrice.toFixed(2)}` : `$${minPrice.toFixed(2)} – $${maxPrice.toFixed(2)}`;
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {paginatedProducts.map((p) => {
+              const typeName = getDressTypeName(p.DressTypeID);
+              const minPrice = Math.min(...p.Variants.map((v) => v.SellingPrice));
+              const maxPrice = Math.max(...p.Variants.map((v) => v.SellingPrice));
+              const priceLabel =
+                minPrice === maxPrice ? `$${minPrice.toFixed(2)}` : `$${minPrice.toFixed(2)} – $${maxPrice.toFixed(2)}`;
 
-            const totalStock = p.Variants.reduce((s, v) => s + v.CurrentStock, 0);
-            const primaryImage = p.Images.find((img) => img.IsPrimary)?.ImageURL || p.Images[0]?.ImageURL;
+              const totalStock = p.Variants.reduce((s, v) => s + v.CurrentStock, 0);
+              const primaryImage = p.Images.find((img) => img.IsPrimary)?.ImageURL || p.Images[0]?.ImageURL;
 
-            const availableSizesList = Array.from(new Set(p.Variants.map((v) => v.Size)));
-            const availableColorsList = Array.from(new Set(p.Variants.map((v) => v.Color)));
+              const availableSizesList = Array.from(new Set(p.Variants.map((v) => v.Size)));
+              const availableColorsList = Array.from(new Set(p.Variants.map((v) => v.Color)));
 
-            return (
-              <div
-                key={p.ProductID}
-                onClick={() => handleOpenDress(p)}
-                className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group cursor-pointer"
-              >
-                <div className="h-64 bg-stone-100 relative overflow-hidden">
-                  {primaryImage ? (
-                    <img
-                      src={primaryImage}
-                      alt={p.ProductName}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-stone-400">
-                      <Shirt className="w-12 h-12" />
+              return (
+                <div
+                  key={p.ProductID}
+                  onClick={() => handleOpenDress(p)}
+                  className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group cursor-pointer"
+                >
+                  <div className="h-64 bg-stone-100 relative overflow-hidden">
+                    {primaryImage ? (
+                      <img
+                        src={primaryImage}
+                        alt={p.ProductName}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-stone-400">
+                        <Shirt className="w-12 h-12" />
+                      </div>
+                    )}
+
+                    <div className="absolute top-2.5 right-2.5">
+                      <span className="w-8 h-8 rounded-full bg-white/90 shadow-xs flex items-center justify-center text-stone-400 hover:text-rose-600 transition-colors">
+                        <Heart className="w-4 h-4" />
+                      </span>
                     </div>
-                  )}
 
-                  <div className="absolute top-2.5 right-2.5">
-                    <span className="w-8 h-8 rounded-full bg-white/90 shadow-xs flex items-center justify-center text-stone-400 hover:text-rose-600 transition-colors">
-                      <Heart className="w-4 h-4" />
-                    </span>
+                    {totalStock === 0 && (
+                      <div className="absolute inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center">
+                        <span className="text-white text-xs font-bold uppercase tracking-wider bg-rose-600 px-3 py-1 rounded">
+                          Out of Stock
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  {totalStock === 0 && (
-                    <div className="absolute inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center">
-                      <span className="text-white text-xs font-bold uppercase tracking-wider bg-rose-600 px-3 py-1 rounded">
-                        Out of Stock
-                      </span>
-                    </div>
-                  )}
-                </div>
+                  <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                    <div>
+                      <div className="text-[11px] text-stone-400 font-semibold uppercase tracking-wider">
+                        {typeName} · {p.Brand}
+                      </div>
+                      <h3 className="font-bold text-sm text-stone-900 line-clamp-1 group-hover:text-rose-600 transition-colors mt-0.5">
+                        {p.ProductName}
+                      </h3>
 
-                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                  <div>
-                    <div className="text-[11px] text-stone-400 font-semibold uppercase tracking-wider">
-                      {typeName} · {p.Brand}
-                    </div>
-                    <h3 className="font-bold text-sm text-stone-900 line-clamp-1 group-hover:text-rose-600 transition-colors mt-0.5">
-                      {p.ProductName}
-                    </h3>
+                      <div className="mt-2 flex items-baseline justify-between">
+                        <span className="text-base font-bold font-mono-numbers text-rose-950">
+                          {priceLabel}
+                        </span>
+                        <span className="text-xs text-stone-400 font-mono-numbers">
+                          {availableSizesList.length} sizes available
+                        </span>
+                      </div>
 
-                    <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-base font-bold font-mono-numbers text-rose-950">
-                        {priceLabel}
-                      </span>
-                      <span className="text-xs text-stone-400 font-mono-numbers">
-                        {availableSizesList.length} sizes available
-                      </span>
+                      <div className="mt-2 pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-500">
+                        <span className="truncate">Sizes: {availableSizesList.join(', ')}</span>
+                        <span className="truncate">{availableColorsList.join(', ')}</span>
+                      </div>
                     </div>
 
-                    <div className="mt-2 pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-500">
-                      <span className="truncate">Sizes: {availableSizesList.join(', ')}</span>
-                      <span className="truncate">{availableColorsList.join(', ')}</span>
-                    </div>
+                    <button
+                      type="button"
+                      className="w-full py-2 bg-stone-900 group-hover:bg-rose-600 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      <span>Select Size & Buy</span>
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    className="w-full py-2 bg-stone-900 group-hover:bg-rose-600 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition-colors"
-                  >
-                    <ShoppingBag className="w-3.5 h-3.5" />
-                    <span>Select Size & Buy</span>
-                  </button>
                 </div>
+              );
+            })}
+          </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="p-4 bg-white rounded-xl border border-stone-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <span className="text-stone-500 font-mono">
+                Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredProducts.length)} of {filteredProducts.length} dresses (Page {currentPage} of {totalPages})
+              </span>
+
+              <div className="flex items-center gap-1.5 self-center">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  className="px-3 py-1.5 border border-stone-300 rounded-lg text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer font-medium"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Prev Page</span>
+                </button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                  .map((p, idx, arr) => {
+                    const prevP = arr[idx - 1];
+                    const showDots = prevP && p - prevP > 1;
+                    return (
+                      <React.Fragment key={p}>
+                        {showDots && <span className="px-1 text-stone-400">...</span>}
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage(p)}
+                          className={`w-7 h-7 rounded-lg text-xs font-mono font-medium flex items-center justify-center cursor-pointer ${
+                            currentPage === p
+                              ? 'bg-rose-600 text-white font-bold shadow-xs'
+                              : 'text-stone-700 hover:bg-stone-100 border border-stone-200'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="px-3 py-1.5 border border-stone-300 rounded-lg text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer font-medium"
+                >
+                  <span>Next Page</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
-            );
-          })}
+            </div>
+          )}
         </div>
       )}
 

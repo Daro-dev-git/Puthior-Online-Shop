@@ -586,7 +586,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return finalClean;
           });
         }
-      }, undefined, 100)
+      }, undefined, 2000)
     );
 
     // 2. Customers
@@ -690,25 +690,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const localPool = [...users, ...cachedUsers, ...INITIAL_USERS];
 
     const matchUser = (u: AppUser) => {
-      const uNum = (u.userNumber || '').trim().toLowerCase();
-      const uId = (u.userId || '').trim().toLowerCase();
-      const uEmail = (u.email || '').trim().toLowerCase();
-      const uName = (u.name || '').trim().toLowerCase();
-      const uPhone = (u.phone || '').trim();
+      const uNum = String(u.userNumber || '').trim().toLowerCase();
+      const uId = String(u.userId || '').trim().toLowerCase();
+      const uEmail = String(u.email || '').trim().toLowerCase();
+      const uName = String(u.name || '').trim().toLowerCase();
+      const uPhone = String(u.phone || '').trim();
 
       return (
         uNum === cleanNum ||
         uId === cleanNum ||
         (cleanNum.length >= 3 && uEmail === cleanNum) ||
-        (cleanNum.length >= 2 && uName === cleanNum) ||
+        (cleanNum.length >= 1 && uName === cleanNum) ||
         (cleanNum.length >= 2 && uPhone === cleanNum) ||
         (cleanNum === 'admin' && u.role === 'admin')
       );
     };
 
-    // 2. Check password match (handles both trimmed and raw passwords)
-    const isPasswordMatch = (u: AppUser) =>
-      Boolean(u.password && ((u.password || '').trim() === cleanPass || u.password === pass));
+    // 2. Check password match (handles string conversions, trimmed and raw passwords)
+    const isPasswordMatch = (u: AppUser) => {
+      const dbPass = String(u.password || '');
+      return Boolean(dbPass && (dbPass.trim() === cleanPass || dbPass === pass));
+    };
 
     const matchingCandidates = localPool.filter(matchUser);
     // Prioritize candidates where password matches
@@ -2557,7 +2559,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
     });
 
-    const todayOrdersList = orders.filter((o) => (o.OrderDate || (o as any).createdAt || '').startsWith(today));
+    const todayUtc = new Date().toISOString().split('T')[0];
+    const todayLocal = new Date().toLocaleDateString('en-CA');
+    const isToday = (dateStr: string) => {
+      if (!dateStr) return false;
+      const d = dateStr.split('T')[0];
+      return d === todayUtc || d === todayLocal;
+    };
+
+    const todayOrdersList = orders.filter((o) => isToday(o.OrderDate || (o as any).createdAt || ''));
     const todayRevenue = todayOrdersList.reduce((sum, o) => sum + (o.Total || 0), 0);
     const todayCost = todayOrdersList.reduce((sum, o) => sum + (o.Cost || 0), 0);
     const todayProfit = todayOrdersList.reduce((sum, o) => sum + (o.Profit || 0), 0);
@@ -2567,7 +2577,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       0
     );
 
-    const todayTxList = transactions.filter((t) => (t.TransactionDate || (t as any).createdAt || '').startsWith(today));
+    const todayTxList = transactions.filter((t) => isToday(t.TransactionDate || (t as any).createdAt || ''));
     const todayStockIn = todayTxList
       .filter((t) => ['Purchase', 'Stock Received', 'Customer Return', 'Adjustment IN'].includes(t.TransactionType))
       .reduce((sum, t) => sum + t.Quantity, 0);
