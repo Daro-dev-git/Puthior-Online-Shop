@@ -20,6 +20,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Palette,
+  X,
+  Tag,
 } from 'lucide-react';
 
 export const PosSalesView: React.FC = () => {
@@ -28,11 +31,17 @@ export const PosSalesView: React.FC = () => {
     customers,
     getAvailableSizesForCode,
     getAvailableColorsForCodeAndSize,
+    getAllColorsForCode,
     getVariant,
     getProductByCode,
     completeSale,
     isAdmin,
     showToast,
+    colors,
+    sizes,
+    addVariantToProduct,
+    addColor,
+    addSize,
   } = useStore();
 
   // POS State
@@ -40,6 +49,26 @@ export const PosSalesView: React.FC = () => {
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
+
+  // Other Color Modal state for POS
+  const [showAddOtherColorModal, setShowAddOtherColorModal] = useState(false);
+  const [otherColorMode, setOtherColorMode] = useState<'preset' | 'custom'>('preset');
+  const [selectedColorPreset, setSelectedColorPreset] = useState<string>('');
+  const [otherColorName, setOtherColorName] = useState<string>('');
+  const [otherColorHex, setOtherColorHex] = useState<string>('#ec4899');
+  const [otherColorPrice, setOtherColorPrice] = useState<number>(0);
+  const [otherColorCost, setOtherColorCost] = useState<number>(0);
+  const [otherColorStock, setOtherColorStock] = useState<number>(10);
+
+  // Other Size Modal state for POS
+  const [showAddOtherSizeModal, setShowAddOtherSizeModal] = useState(false);
+  const [otherSizeMode, setOtherSizeMode] = useState<'preset' | 'custom'>('preset');
+  const [selectedSizePreset, setSelectedSizePreset] = useState<string>('');
+  const [otherSizeName, setOtherSizeName] = useState<string>('');
+  const [otherSizeColor, setOtherSizeColor] = useState<string>('');
+  const [otherSizePrice, setOtherSizePrice] = useState<number>(0);
+  const [otherSizeCost, setOtherSizeCost] = useState<number>(0);
+  const [otherSizeStock, setOtherSizeStock] = useState<number>(10);
 
   // Pagination & filter for POS product selector ("ensure there's no limited the sales product items. if it long, pls add next pages")
   const [productSearch, setProductSearch] = useState('');
@@ -138,6 +167,13 @@ export const PosSalesView: React.FC = () => {
     return getAvailableColorsForCodeAndSize(selectedProductCode, selectedSize);
   }, [selectedProductCode, selectedSize, products, getAvailableColorsForCodeAndSize]);
 
+  // Colors that exist on this product in other sizes (for convenient 1-click quick add/select)
+  const otherColorsForProduct = useMemo(() => {
+    if (!selectedProductCode) return [];
+    const allColors = getAllColorsForCode(selectedProductCode);
+    return allColors.filter((c) => !availableColors.includes(c));
+  }, [selectedProductCode, getAllColorsForCode, availableColors]);
+
   const colorsKey = availableColors.join(',');
   // Color auto-selection logic
   useEffect(() => {
@@ -149,8 +185,13 @@ export const PosSalesView: React.FC = () => {
       if (!selectedColor || !availableColors.includes(selectedColor)) {
         setSelectedColor(availableColors[0]);
       }
-    } else if (selectedColor) {
-      setSelectedColor('');
+    } else if (selectedColor && availableColors.length === 0) {
+      const existsOnProduct = products
+        .find((p) => p.ProductCode === selectedProductCode)
+        ?.Variants.some((v) => v.Color === selectedColor);
+      if (!existsOnProduct) {
+        setSelectedColor('');
+      }
     }
   }, [colorsKey]);
 
@@ -163,6 +204,187 @@ export const PosSalesView: React.FC = () => {
   const currentProduct = useMemo(() => {
     return getProductByCode(selectedProductCode);
   }, [selectedProductCode, products, getProductByCode]);
+
+  // Handlers for Other Color in POS Terminal
+  const openAddOtherColorModal = () => {
+    if (!currentProduct) {
+      showToast('Please select a product first', 'error');
+      return;
+    }
+    if (!selectedSize) {
+      showToast('Please select a size first', 'error');
+      return;
+    }
+
+    const sampleVariant = currentProduct.Variants[0];
+    setOtherColorMode('preset');
+    const availableLower = new Set(availableColors.map((c) => c.toLowerCase()));
+    const firstUnused = colors.find((c) => !availableLower.has(c.ColorName.toLowerCase()));
+    setSelectedColorPreset(firstUnused?.ColorName || colors[0]?.ColorName || '');
+    setOtherColorName('');
+    setOtherColorHex('#ec4899');
+    setOtherColorPrice(sampleVariant?.SellingPrice || 0);
+    setOtherColorCost(sampleVariant?.ActualPrice || 0);
+    setOtherColorStock(10);
+    setShowAddOtherColorModal(true);
+  };
+
+  const handleQuickAddOtherColor = (colorName: string) => {
+    if (!currentProduct || !selectedSize) {
+      showToast('Please select a product and size first', 'error');
+      return;
+    }
+
+    const existing = currentProduct.Variants.find(
+      (v) =>
+        v.Size.trim().toLowerCase() === selectedSize.trim().toLowerCase() &&
+        v.Color.trim().toLowerCase() === colorName.trim().toLowerCase()
+    );
+
+    if (existing) {
+      setSelectedColor(existing.Color);
+      showToast(`Selected ${existing.Color}`);
+      return;
+    }
+
+    const sampleVariant =
+      currentProduct.Variants.find((v) => v.Color.trim().toLowerCase() === colorName.trim().toLowerCase()) ||
+      currentProduct.Variants[0];
+
+    setOtherColorMode('preset');
+    setSelectedColorPreset(colorName);
+    setOtherColorName(colorName);
+    setOtherColorPrice(sampleVariant?.SellingPrice || 0);
+    setOtherColorCost(sampleVariant?.ActualPrice || 0);
+    setOtherColorStock(10);
+    setShowAddOtherColorModal(true);
+  };
+
+  const handleSaveOtherColor = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!currentProduct || !selectedSize) {
+      showToast('Please select a product and size first', 'error');
+      return;
+    }
+
+    const finalColorName = (otherColorMode === 'custom' ? otherColorName : selectedColorPreset).trim();
+    if (!finalColorName) {
+      showToast('Please specify a color name', 'error');
+      return;
+    }
+
+    // Add to master colors if not existing
+    const existingMasterColor = colors.find((c) => c.ColorName.toLowerCase() === finalColorName.toLowerCase());
+    if (!existingMasterColor) {
+      addColor(finalColorName, otherColorHex || '#ec4899');
+    }
+
+    // Check if variant already exists
+    const existingVariant = currentProduct.Variants.find(
+      (v) =>
+        v.Size.trim().toLowerCase() === selectedSize.trim().toLowerCase() &&
+        v.Color.trim().toLowerCase() === finalColorName.toLowerCase()
+    );
+
+    if (existingVariant) {
+      setSelectedColor(existingVariant.Color);
+      setShowAddOtherColorModal(false);
+      showToast(`Selected existing color ${existingVariant.Color}`);
+      return;
+    }
+
+    const res = addVariantToProduct(currentProduct.ProductID, {
+      Size: selectedSize.trim(),
+      Color: finalColorName,
+      ActualPrice: Number(otherColorCost) || 0,
+      SellingPrice: Number(otherColorPrice) || 0,
+      CurrentStock: Number(otherColorStock) > 0 ? Number(otherColorStock) : 1,
+      MinimumStock: 2,
+      Status: 'active',
+    });
+
+    if (res.success) {
+      setSelectedColor(finalColorName);
+      setShowAddOtherColorModal(false);
+      showToast(`Color "${finalColorName}" added to ${selectedProductCode} (Size ${selectedSize}) and selected for sale!`, 'success');
+    } else {
+      showToast(res.error || 'Failed to add variant', 'error');
+    }
+  };
+
+  // Handlers for Other Size in POS Terminal
+  const openAddOtherSizeModal = () => {
+    if (!currentProduct) {
+      showToast('Please select a product first', 'error');
+      return;
+    }
+
+    const sampleVariant = currentProduct.Variants[0];
+    const availableLower = new Set(availableSizes.map((s) => s.toLowerCase()));
+    const firstUnusedSize = sizes.find((s) => !availableLower.has(s.SizeValue.toLowerCase()));
+    setOtherSizeMode('preset');
+    setSelectedSizePreset(firstUnusedSize?.SizeValue || sizes[0]?.SizeValue || '');
+    setOtherSizeName('');
+    setOtherSizeColor(selectedColor || availableColors[0] || sampleVariant?.Color || 'Default');
+    setOtherSizePrice(sampleVariant?.SellingPrice || 0);
+    setOtherSizeCost(sampleVariant?.ActualPrice || 0);
+    setOtherSizeStock(10);
+    setShowAddOtherSizeModal(true);
+  };
+
+  const handleSaveOtherSize = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!currentProduct) {
+      showToast('Please select a product first', 'error');
+      return;
+    }
+
+    const finalSizeVal = (otherSizeMode === 'custom' ? otherSizeName : selectedSizePreset).trim();
+    if (!finalSizeVal) {
+      showToast('Please specify a size value', 'error');
+      return;
+    }
+
+    const finalColorVal = otherSizeColor.trim() || currentProduct.Variants[0]?.Color || 'Default';
+
+    const existingMasterSize = sizes.find((s) => s.SizeValue.toLowerCase() === finalSizeVal.toLowerCase());
+    if (!existingMasterSize) {
+      addSize(finalSizeVal);
+    }
+
+    const existingVariant = currentProduct.Variants.find(
+      (v) =>
+        v.Size.trim().toLowerCase() === finalSizeVal.toLowerCase() &&
+        v.Color.trim().toLowerCase() === finalColorVal.toLowerCase()
+    );
+
+    if (existingVariant) {
+      setSelectedSize(existingVariant.Size);
+      setSelectedColor(existingVariant.Color);
+      setShowAddOtherSizeModal(false);
+      showToast(`Selected existing size ${existingVariant.Size} (${existingVariant.Color})`);
+      return;
+    }
+
+    const res = addVariantToProduct(currentProduct.ProductID, {
+      Size: finalSizeVal,
+      Color: finalColorVal,
+      ActualPrice: Number(otherSizeCost) || 0,
+      SellingPrice: Number(otherSizePrice) || 0,
+      CurrentStock: Number(otherSizeStock) > 0 ? Number(otherSizeStock) : 1,
+      MinimumStock: 2,
+      Status: 'active',
+    });
+
+    if (res.success) {
+      setSelectedSize(finalSizeVal);
+      setSelectedColor(finalColorVal);
+      setShowAddOtherSizeModal(false);
+      showToast(`Added Size "${finalSizeVal}" (${finalColorVal}) to ${selectedProductCode} and selected for sale!`, 'success');
+    } else {
+      showToast(res.error || 'Failed to add size variant', 'error');
+    }
+  };
 
   // Add Item to Sale Cart
   const handleAddToCart = () => {
@@ -525,9 +747,19 @@ export const PosSalesView: React.FC = () => {
                 <label className="text-xs font-bold text-stone-900 uppercase tracking-wider">
                   2. Select Size
                 </label>
-                <span className="text-[11px] text-stone-400">
-                  {availableSizes.length} sizes available for {selectedProductCode}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-stone-400">
+                    {availableSizes.length} sizes available for {selectedProductCode}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={openAddOtherSizeModal}
+                    className="text-[11px] font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-0.5 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Other Size</span>
+                  </button>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2">
                 {availableSizes.map((sz) => (
@@ -535,7 +767,7 @@ export const PosSalesView: React.FC = () => {
                     key={sz}
                     type="button"
                     onClick={() => setSelectedSize(sz)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer ${
                       selectedSize === sz
                         ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
                         : 'bg-stone-50 text-stone-700 border-stone-300 hover:bg-stone-100'
@@ -544,37 +776,93 @@ export const PosSalesView: React.FC = () => {
                     {sz}
                   </button>
                 ))}
+                {availableSizes.length === 0 && (
+                  <div className="text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center gap-2">
+                    <span>No sizes found. Click "+ Other Size" to add one for sale.</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Color Selector with Auto-Selection Notice */}
+            {/* Color Selector with Auto-Selection Notice, Other Colors & + Other Color Button */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-stone-900 uppercase tracking-wider">
                   3. Select Color
                 </label>
-                <span className="text-[11px] text-stone-400">
-                  {availableColors.length === 1
-                    ? 'Only 1 color available (Auto-selected)'
-                    : `${availableColors.length} colors available for Size ${selectedSize}`}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {availableColors.map((cl) => (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-stone-400">
+                    {availableColors.length === 1
+                      ? '1 color (Auto-selected)'
+                      : `${availableColors.length} colors for Size ${selectedSize || '-'}`}
+                  </span>
                   <button
-                    key={cl}
                     type="button"
-                    onClick={() => setSelectedColor(cl)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
-                      selectedColor === cl
-                        ? 'bg-rose-50 text-rose-950 border-rose-500 ring-1 ring-rose-400 shadow-xs font-bold'
-                        : 'bg-stone-50 text-stone-700 border-stone-300 hover:bg-stone-100'
-                    }`}
+                    onClick={openAddOtherColorModal}
+                    className="text-[11px] font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
                   >
-                    <span>{cl}</span>
+                    <Palette className="w-3 h-3" />
+                    <span>+ Other Color</span>
                   </button>
-                ))}
+                </div>
               </div>
+
+              <div className="flex flex-wrap gap-2">
+                {availableColors.map((cl) => {
+                  const variantForStock = getVariant(selectedProductCode, selectedSize, cl);
+                  const stock = variantForStock?.CurrentStock ?? 0;
+                  return (
+                    <button
+                      key={cl}
+                      type="button"
+                      onClick={() => setSelectedColor(cl)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                        selectedColor === cl
+                          ? 'bg-rose-50 text-rose-950 border-rose-500 ring-1 ring-rose-400 shadow-xs font-bold'
+                          : 'bg-stone-50 text-stone-700 border-stone-300 hover:bg-stone-100'
+                      }`}
+                    >
+                      <span>{cl}</span>
+                      <span
+                        className={`text-[10px] px-1 py-0.2 rounded font-mono ${
+                          stock === 0 ? 'bg-red-100 text-red-700' : 'bg-stone-200/70 text-stone-600'
+                        }`}
+                      >
+                        {stock}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                {/* Direct inline "+ Other Color" button in the pill row */}
+                <button
+                  type="button"
+                  onClick={openAddOtherColorModal}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-dashed border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400 flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Other Color</span>
+                </button>
+              </div>
+
+              {/* Quick-add pills for other colors that exist on this product in other sizes */}
+              {otherColorsForProduct.length > 0 && (
+                <div className="mt-2.5 pt-2 border-t border-stone-100 flex items-center flex-wrap gap-1.5 text-xs">
+                  <span className="text-[11px] text-stone-500 font-medium">Product's other colors:</span>
+                  {otherColorsForProduct.map((otherColor) => (
+                    <button
+                      key={otherColor}
+                      type="button"
+                      onClick={() => handleQuickAddOtherColor(otherColor)}
+                      className="px-2 py-0.5 rounded text-[11px] bg-stone-100 hover:bg-rose-100 text-stone-700 hover:text-rose-800 border border-stone-200 hover:border-rose-300 flex items-center gap-1 cursor-pointer transition-colors"
+                      title={`Add & select ${otherColor} for Size ${selectedSize}`}
+                    >
+                      <Plus className="w-2.5 h-2.5 text-stone-400" />
+                      <span>{otherColor}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Auto-Loaded Prices and Stock Display (Section 12 & 36) */}
@@ -890,6 +1178,377 @@ export const PosSalesView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal: Add Other Color directly in POS Terminal */}
+      {showAddOtherColorModal && currentProduct && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+                  <Palette className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">Add Other Color for Sale</h3>
+                  <p className="text-[11px] text-stone-500 font-mono">
+                    {selectedProductCode} · Size {selectedSize}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddOtherColorModal(false)}
+                className="p-1 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mode Switcher */}
+            <div className="flex border-b border-stone-200 mt-3">
+              <button
+                type="button"
+                onClick={() => setOtherColorMode('preset')}
+                className={`flex-1 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
+                  otherColorMode === 'preset'
+                    ? 'border-rose-600 text-rose-700'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                Store Colors ({colors.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOtherColorMode('custom')}
+                className={`flex-1 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
+                  otherColorMode === 'custom'
+                    ? 'border-rose-600 text-rose-700'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                + Custom / New Color
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOtherColor} className="space-y-3.5 pt-3 text-xs">
+              {otherColorMode === 'preset' ? (
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1.5">
+                    Choose from Store Colors:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto p-1 bg-stone-50 rounded-lg border border-stone-200">
+                    {colors.map((c) => {
+                      const isSelected = selectedColorPreset === c.ColorName;
+                      return (
+                        <button
+                          key={c.ColorID}
+                          type="button"
+                          onClick={() => setSelectedColorPreset(c.ColorName)}
+                          className={`p-1.5 rounded-md text-left text-xs border flex items-center gap-1.5 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-rose-50 border-rose-500 font-bold text-rose-950 ring-1 ring-rose-400'
+                              : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-100'
+                          }`}
+                        >
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-stone-300 shrink-0"
+                            style={{ backgroundColor: c.HexCode }}
+                          />
+                          <span className="truncate">{c.ColorName}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div>
+                    <label className="block font-semibold text-stone-700 mb-1">
+                      New Color Name (English / Khmer)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Peach, Rose Gold, ទឹកសណ្តេក..."
+                      value={otherColorName}
+                      onChange={(e) => setOtherColorName(e.target.value)}
+                      className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-rose-500"
+                      required={otherColorMode === 'custom'}
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-stone-700 mb-1">
+                      Color Swatch / Hex
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={otherColorHex}
+                        onChange={(e) => setOtherColorHex(e.target.value)}
+                        className="w-9 h-8 p-0 border border-stone-300 rounded cursor-pointer bg-transparent"
+                      />
+                      <input
+                        type="text"
+                        value={otherColorHex}
+                        onChange={(e) => setOtherColorHex(e.target.value)}
+                        className="w-28 px-2 py-1.5 bg-stone-50 border border-stone-300 rounded text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Price and Stock Configuration */}
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-stone-100">
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1">
+                    Selling Price (Retail)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-stone-400">$</span>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      value={otherColorPrice}
+                      onChange={(e) => setOtherColorPrice(parseFloat(e.target.value) || 0)}
+                      className="w-full pl-6 pr-2 py-1.5 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers font-bold"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1">
+                    Initial Stock Available
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={otherColorStock}
+                    onChange={(e) => setOtherColorStock(parseInt(e.target.value, 10) || 1)}
+                    className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers font-bold"
+                    required
+                  />
+                </div>
+              </div>
+
+              {isAdmin && (
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1">
+                    Actual Cost Price
+                  </label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-stone-400">$</span>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      value={otherColorCost}
+                      onChange={(e) => setOtherColorCost(parseFloat(e.target.value) || 0)}
+                      className="w-full pl-6 pr-2 py-1.5 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddOtherColorModal(false)}
+                  className="px-3 py-2 border border-stone-300 rounded-lg text-stone-700 hover:bg-stone-50 cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg cursor-pointer text-xs flex items-center gap-1.5 shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add & Select for Sale</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Other Size directly in POS Terminal */}
+      {showAddOtherSizeModal && currentProduct && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+                  <Tag className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">Add Other Size for Sale</h3>
+                  <p className="text-[11px] text-stone-500 font-mono">
+                    Product: {selectedProductCode}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddOtherSizeModal(false)}
+                className="p-1 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mode Switcher */}
+            <div className="flex border-b border-stone-200 mt-3">
+              <button
+                type="button"
+                onClick={() => setOtherSizeMode('preset')}
+                className={`flex-1 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
+                  otherSizeMode === 'preset'
+                    ? 'border-rose-600 text-rose-700'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                Store Sizes ({sizes.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOtherSizeMode('custom')}
+                className={`flex-1 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
+                  otherSizeMode === 'custom'
+                    ? 'border-rose-600 text-rose-700'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                + Custom Size
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOtherSize} className="space-y-3.5 pt-3 text-xs">
+              {otherSizeMode === 'preset' ? (
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1.5">
+                    Choose from Store Sizes:
+                  </label>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 max-h-36 overflow-y-auto p-1 bg-stone-50 rounded-lg border border-stone-200">
+                    {sizes.map((s) => {
+                      const isSelected = selectedSizePreset === s.SizeValue;
+                      return (
+                        <button
+                          key={s.SizeID}
+                          type="button"
+                          onClick={() => setSelectedSizePreset(s.SizeValue)}
+                          className={`py-1.5 px-2 rounded text-center text-xs font-mono font-bold border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                              : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-100'
+                          }`}
+                        >
+                          {s.SizeValue}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1">
+                    Custom Size Value
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 14, XL, XXL, Free Size..."
+                    value={otherSizeName}
+                    onChange={(e) => setOtherSizeName(e.target.value)}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono focus:bg-white focus:ring-1 focus:ring-rose-500"
+                    required={otherSizeMode === 'custom'}
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {/* Color associated with this size */}
+              <div>
+                <label className="block font-semibold text-stone-700 mb-1">
+                  Color for this Size
+                </label>
+                <select
+                  value={otherSizeColor}
+                  onChange={(e) => setOtherSizeColor(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white"
+                >
+                  {Array.from(
+                    new Set([
+                      ...getAllColorsForCode(selectedProductCode),
+                      ...colors.map((c) => c.ColorName),
+                    ])
+                  ).map((cl) => (
+                    <option key={cl} value={cl}>
+                      {cl}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Price and Stock Configuration */}
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-stone-100">
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1">
+                    Selling Price (Retail)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-stone-400">$</span>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      value={otherSizePrice}
+                      onChange={(e) => setOtherSizePrice(parseFloat(e.target.value) || 0)}
+                      className="w-full pl-6 pr-2 py-1.5 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers font-bold"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1">
+                    Initial Stock Available
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={otherSizeStock}
+                    onChange={(e) => setOtherSizeStock(parseInt(e.target.value, 10) || 1)}
+                    className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-300 rounded-lg text-xs font-mono-numbers font-bold"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddOtherSizeModal(false)}
+                  className="px-3 py-2 border border-stone-300 rounded-lg text-stone-700 hover:bg-stone-50 cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg cursor-pointer text-xs flex items-center gap-1.5 shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add & Select for Sale</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

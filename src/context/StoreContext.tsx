@@ -203,6 +203,7 @@ interface StoreContextType {
   getVariant: (code: string, size: string, color: string) => ProductVariant | undefined;
   getAvailableSizesForCode: (code: string) => string[];
   getAvailableColorsForCodeAndSize: (code: string, size: string) => string[];
+  getAllColorsForCode: (code: string) => string[];
 
   // Aggregated KPIs
   kpis: {
@@ -939,11 +940,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return products.find((p) => p.ProductCode.trim().toUpperCase() === code.trim().toUpperCase());
   }, [products]);
 
+  const isVariantActive = (v: ProductVariant) => {
+    if (!v) return false;
+    if (v.Status === undefined || v.Status === null) return true;
+    return String(v.Status).trim().toLowerCase() !== 'inactive';
+  };
+
   const getVariant = useCallback((code: string, size: string, color: string): ProductVariant | undefined => {
     const prod = getProductByCode(code);
     if (!prod) return undefined;
     return prod.Variants.find(
       (v) =>
+        Boolean(v.Size && v.Color) &&
         v.Size.trim().toLowerCase() === size.trim().toLowerCase() &&
         v.Color.trim().toLowerCase() === color.trim().toLowerCase()
     );
@@ -954,7 +962,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (!prod) return [];
     const sizeSet = new Set<string>();
     prod.Variants.forEach((v) => {
-      if (v.Status === 'active') sizeSet.add(v.Size);
+      if (isVariantActive(v) && v.Size) sizeSet.add(v.Size.trim());
     });
     return Array.from(sizeSet).sort(compareSizes);
   }, [getProductByCode]);
@@ -964,8 +972,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (!prod) return [];
     const colorSet = new Set<string>();
     prod.Variants.forEach((v) => {
-      if (v.Status === 'active' && v.Size.trim().toLowerCase() === size.trim().toLowerCase()) {
-        colorSet.add(v.Color);
+      if (
+        isVariantActive(v) &&
+        v.Color &&
+        v.Size &&
+        v.Size.trim().toLowerCase() === size.trim().toLowerCase()
+      ) {
+        colorSet.add(v.Color.trim());
+      }
+    });
+    return Array.from(colorSet);
+  }, [getProductByCode]);
+
+  const getAllColorsForCode = useCallback((code: string): string[] => {
+    const prod = getProductByCode(code);
+    if (!prod) return [];
+    const colorSet = new Set<string>();
+    prod.Variants.forEach((v) => {
+      if (isVariantActive(v) && v.Color) {
+        colorSet.add(v.Color.trim());
       }
     });
     return Array.from(colorSet);
@@ -2868,6 +2893,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         getVariant,
         getAvailableSizesForCode,
         getAvailableColorsForCodeAndSize,
+        getAllColorsForCode,
 
         kpis,
         isFirebaseConnected,
