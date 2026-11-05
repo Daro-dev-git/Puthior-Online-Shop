@@ -14,11 +14,7 @@ import {
   Calendar,
   Layers,
   ShoppingBag,
-  Bell,
-  BellRing,
-  Sliders,
   Mail,
-  Send,
 } from 'lucide-react';
 import { EmailAlertModal } from '../common/EmailAlertModal';
 import {
@@ -46,7 +42,6 @@ export const DashboardView: React.FC<{
     isAdmin,
     getDressTypeName,
     settings,
-    updateLowStockThreshold,
     emailAlertRecipients,
   } = useStore();
 
@@ -281,35 +276,6 @@ export const DashboardView: React.FC<{
             <h1 className="text-2xl sm:text-3xl font-bold font-display text-stone-900 tracking-tight">
               {settings?.StoreName || 'Girl Dress Shop'}
             </h1>
-            {isAdmin && kpis.lowStockCount > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <a
-                  href="#low-stock-alert-section"
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold shadow-2xs hover:bg-rose-100 transition-all animate-pulse"
-                  title={`${kpis.lowStockCount} items at or below defined threshold of ${kpis.definedThreshold} units`}
-                >
-                  <BellRing className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                  <span>Low Stock Alert</span>
-                  <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[10px] font-bold font-mono-numbers">
-                    {kpis.lowStockCount}
-                  </span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setShowEmailAlertModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-                  title="Send or preview low stock email alert notification"
-                >
-                  <Mail className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Email Alert</span>
-                  {emailAlertRecipients.length > 0 && (
-                    <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px] font-bold font-mono-numbers">
-                      {emailAlertRecipients.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-            )}
           </div>
           <p className="text-xs text-stone-500 mt-1">
             {settings?.Tagline || 'Store Performance, 30-Day Sales Trend & Real-Time Inventory'}
@@ -362,92 +328,6 @@ export const DashboardView: React.FC<{
           </button>
         </div>
       </div>
-
-      {/* Administrator Low Stock Alert Notification Card with Defined Threshold Controls */}
-      {isAdmin && kpis.lowStockCount > 0 && (
-        <div id="low-stock-alert-section" className="bg-gradient-to-r from-amber-50/90 via-rose-50/80 to-amber-50/90 border border-amber-300/80 rounded-2xl p-4 sm:p-5 shadow-xs transition-all">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            {/* Left: Icon, Badge, and Details */}
-            <div className="flex items-start gap-3.5">
-              <div className="relative p-2.5 rounded-xl bg-amber-500/10 border border-amber-300 text-amber-700 shrink-0 mt-0.5">
-                <BellRing className="w-5 h-5 text-amber-600 animate-bounce" />
-                <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 bg-rose-600 text-white text-[10px] font-extrabold rounded-full shadow-2xs">
-                  {kpis.lowStockCount}
-                </span>
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-sm font-bold text-stone-900">
-                    Administrator Stock Notification Alert
-                  </h3>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                    {kpis.lowStockCount} {kpis.lowStockCount === 1 ? 'item below threshold' : 'items below threshold'}
-                  </span>
-                  {kpis.outOfStockCount > 0 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-800 border border-red-200">
-                      {kpis.outOfStockCount} out of stock
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-stone-600 leading-relaxed">
-                  Attention: <strong>{kpis.lowStockProductsCount} dresses ({kpis.lowStockCount} variants)</strong> currently have available stock quantities at or below your defined alert threshold of <strong>{kpis.definedThreshold} units</strong>. Restock now to prevent inventory stockouts.
-                </p>
-              </div>
-            </div>
-
-            {/* Right: Defined Threshold Adjuster & Restock CTA */}
-            <div className="flex flex-wrap items-center gap-3 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-amber-200/70">
-              {/* Threshold Tuner */}
-              <div className="flex items-center gap-2 bg-white/90 border border-amber-200 px-3 py-1.5 rounded-xl text-xs shadow-2xs">
-                <Sliders className="w-3.5 h-3.5 text-stone-500 shrink-0" />
-                <span className="text-stone-600 font-medium">Defined Threshold:</span>
-                <div className="flex items-center gap-1">
-                  {[3, 5, 8, 10, 15].map((val) => (
-                    <button
-                      key={val}
-                      onClick={() => updateLowStockThreshold(val)}
-                      className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                        kpis.definedThreshold === val
-                          ? 'bg-amber-600 text-white shadow-2xs'
-                          : 'text-stone-600 hover:bg-stone-100'
-                      }`}
-                      title={`Define alert threshold to ${val} units`}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowEmailAlertModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-300 rounded-xl shadow-2xs transition-colors cursor-pointer"
-                  title="Dispatch or format email notification to authorized staff/admin recipients"
-                >
-                  <Mail className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Send Email Alert</span>
-                  {emailAlertRecipients.length > 0 && (
-                    <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 text-[10px] font-bold rounded-full">
-                      {emailAlertRecipients.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => setCurrentView('inventory-in')}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors cursor-pointer"
-                >
-                  <ArrowDownToLine className="w-3.5 h-3.5" />
-                  <span>Restock IN</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Primary KPI Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

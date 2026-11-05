@@ -15,7 +15,11 @@ import {
   CartItem,
   UserRole,
   AppUser,
+  AppTheme,
+  AppLanguage,
+  ActiveSession,
 } from '../types';
+import { translations, getTranslation, TranslationKey } from '../i18n/translations';
 import { compareSizes } from '../utils/sizeUtils';
 import {
   INITIAL_PRODUCTS,
@@ -254,6 +258,19 @@ interface StoreContextType {
 
   // Cloud History Sync & Restore Verification
   refreshAllHistory: () => Promise<{ ordersCount: number; transactionsCount: number }>;
+
+  // Theme & Language
+  theme: AppTheme;
+  setTheme: (theme: AppTheme) => void;
+  toggleTheme: () => void;
+  language: AppLanguage;
+  setLanguage: (lang: AppLanguage) => void;
+  t: (key: TranslationKey) => string;
+
+  // Active Sessions
+  activeSessions: ActiveSession[];
+  terminateSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+  terminateAllOtherSessions: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -378,14 +395,91 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   });
   const [priceCategories] = useState<PriceCategory[]>(INITIAL_PRICE_CATEGORIES);
+
+  // Helper for StoreName normalization
+  const normalizeStoreName = (name?: string) => {
+    if (!name || name === 'Girl Dress Shop' || name === 'Puthipor Online Clothing shop') {
+      return 'Puthipor Shop';
+    }
+    return name;
+  };
+
   const [settings, setSettings] = useState<StoreSettings>(() => {
     try {
       const cached = localStorage.getItem('gds_cached_store_settings');
-      return cached ? { ...INITIAL_SETTINGS, ...JSON.parse(cached) } : INITIAL_SETTINGS;
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        return {
+          ...INITIAL_SETTINGS,
+          ...parsed,
+          StoreName: normalizeStoreName(parsed.StoreName),
+        };
+      }
+      return INITIAL_SETTINGS;
     } catch {
       return INITIAL_SETTINGS;
     }
   });
+
+  // App Theme State (Light & Dark)
+  const [theme, setThemeState] = useState<AppTheme>(() => {
+    try {
+      const saved = localStorage.getItem('gds_app_theme') as AppTheme;
+      if (saved === 'dark' || saved === 'light') return saved;
+      if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+      }
+      return 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+    try {
+      localStorage.setItem('gds_app_theme', theme);
+    } catch {}
+  }, [theme]);
+
+  const setTheme = useCallback((t: AppTheme) => {
+    setThemeState(t);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  // App Language State (English & Khmer)
+  const [language, setLanguageState] = useState<AppLanguage>(() => {
+    try {
+      const saved = localStorage.getItem('gds_app_language') as AppLanguage;
+      return saved === 'km' ? 'km' : 'en';
+    } catch {
+      return 'en';
+    }
+  });
+
+  const setLanguage = useCallback((lang: AppLanguage) => {
+    setLanguageState(lang);
+    try {
+      localStorage.setItem('gds_app_language', lang);
+    } catch {}
+  }, []);
+
+  const t = useCallback(
+    (key: TranslationKey): string => {
+      return getTranslation(key, language);
+    },
+    [language]
+  );
+
   const [users, setUsers] = useState<AppUser[]>(() => {
     try {
       const cached = localStorage.getItem('gds_cached_users');
@@ -408,6 +502,164 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const role: UserRole = currentUser?.role || 'admin';
   const isAdmin = role === 'admin';
+
+  // Active Sessions Tracking
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>(() => {
+    try {
+      const saved = localStorage.getItem('gds_active_sessions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Helper for Session ID and device identification
+  const getOrCreateSessionId = useCallback((): string => {
+    try {
+      let sid = sessionStorage.getItem('gds_current_session_id');
+      if (!sid) {
+        sid = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        sessionStorage.setItem('gds_current_session_id', sid);
+      }
+      return sid;
+    } catch {
+      return `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    }
+  }, []);
+
+  const getDeviceAndBrowserInfo = useCallback((): { device: string; browser: string } => {
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    let browser = 'Web Browser';
+    if (ua.includes('Firefox')) browser = 'Firefox';
+    else if (ua.includes('SamsungBrowser')) browser = 'Samsung Internet';
+    else if (ua.includes('Opera') || ua.includes('OPR')) browser = 'Opera';
+    else if (ua.includes('Edge') || ua.includes('Edg')) browser = 'Microsoft Edge';
+    else if (ua.includes('Chrome')) browser = 'Google Chrome';
+    else if (ua.includes('Safari')) browser = 'Apple Safari';
+
+    let os = 'Desktop';
+    if (/iPad|iPhone|iPod/.test(ua)) os = 'iOS Device';
+    else if (/Android/.test(ua)) os = 'Android Device';
+    else if (/Macintosh|Mac OS X/.test(ua)) os = 'macOS';
+    else if (/Windows NT/.test(ua)) os = 'Windows PC';
+    else if (/Linux/.test(ua)) os = 'Linux PC';
+
+    return { device: os, browser };
+  }, []);
+
+  // Update active sessions and maintain heartbeat
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const mySid = getOrCreateSessionId();
+    const { device, browser } = getDeviceAndBrowserInfo();
+    const now = new Date().toISOString();
+
+    setActiveSessions((prev) => {
+      const cutOff = Date.now() - 24 * 60 * 60 * 1000; // prune sessions older than 24h
+      const valid = prev.filter((s) => new Date(s.lastActiveTime).getTime() > cutOff);
+
+      const existingIndex = valid.findIndex((s) => s.sessionId === mySid);
+      let updated: ActiveSession[];
+      if (existingIndex >= 0) {
+        updated = [...valid];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          userId: currentUser.userId,
+          userNumber: currentUser.userNumber,
+          userName: currentUser.name,
+          role: currentUser.role,
+          lastActiveTime: now,
+          currentView,
+          isCurrentSession: true,
+        };
+      } else {
+        const newSession: ActiveSession = {
+          sessionId: mySid,
+          userId: currentUser.userId,
+          userNumber: currentUser.userNumber,
+          userName: currentUser.name,
+          role: currentUser.role,
+          deviceInfo: `${device} · ${browser}`,
+          browser,
+          ipAddress: typeof window !== 'undefined' && window.location.hostname === 'localhost' ? '127.0.0.1 (Local Dev)' : 'Cloud Web Session',
+          loginTime: now,
+          lastActiveTime: now,
+          currentView,
+          isCurrentSession: true,
+        };
+        updated = [newSession, ...valid];
+      }
+
+      const withFlags = updated.map((s) => ({
+        ...s,
+        isCurrentSession: s.sessionId === mySid,
+      }));
+
+      try {
+        localStorage.setItem('gds_active_sessions', JSON.stringify(withFlags));
+      } catch {}
+
+      return withFlags;
+    });
+
+    const interval = setInterval(() => {
+      setActiveSessions((prev) => {
+        const updated = prev.map((s) =>
+          s.sessionId === mySid
+            ? { ...s, lastActiveTime: new Date().toISOString(), currentView }
+            : s
+        );
+        try {
+          localStorage.setItem('gds_active_sessions', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+    }, 25000);
+
+    return () => clearInterval(interval);
+  }, [currentUser, currentView, getOrCreateSessionId, getDeviceAndBrowserInfo]);
+
+  // Session termination functions
+  const terminateSession = useCallback(
+    async (sessionId: string): Promise<{ success: boolean; error?: string }> => {
+      const mySid = getOrCreateSessionId();
+      if (sessionId === mySid) {
+        logout();
+        showToast(language === 'km' ? 'បានបញ្ចប់សម័យកាលឧបករណ៍បច្ចុប្បន្ន' : 'Current session terminated', 'info');
+        return { success: true };
+      }
+
+      setActiveSessions((prev) => {
+        const filtered = prev.filter((s) => s.sessionId !== sessionId);
+        try {
+          localStorage.setItem('gds_active_sessions', JSON.stringify(filtered));
+        } catch {}
+        return filtered;
+      });
+
+      showToast(language === 'km' ? 'បានបញ្ចប់សម័យកាលដោយជោគជ័យ' : 'Session terminated successfully');
+      return { success: true };
+    },
+    [getOrCreateSessionId, language]
+  );
+
+  const terminateAllOtherSessions = useCallback(
+    async (): Promise<{ success: boolean; error?: string }> => {
+      const mySid = getOrCreateSessionId();
+      setActiveSessions((prev) => {
+        const kept = prev.filter((s) => s.sessionId === mySid);
+        try {
+          localStorage.setItem('gds_active_sessions', JSON.stringify(kept));
+        } catch {}
+        return kept;
+      });
+
+      showToast(language === 'km' ? 'បានបញ្ចប់សម័យកាលឧបករណ៍ផ្សេងទៀតទាំងអស់' : 'All other sessions terminated successfully');
+      return { success: true };
+    },
+    [getOrCreateSessionId, language]
+  );
 
   // Cart State (session local)
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -462,7 +714,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     loadSettingsCacheFirst()
       .then((loadedSettings) => {
         if (loadedSettings) {
-          setSettings((prev) => (JSON.stringify(prev) === JSON.stringify(loadedSettings) ? prev : loadedSettings));
+          const normalized = {
+            ...loadedSettings,
+            StoreName: normalizeStoreName(loadedSettings.StoreName),
+          };
+          setSettings((prev) => (JSON.stringify(prev) === JSON.stringify(normalized) ? prev : normalized));
         }
       })
       .catch(() => {});
@@ -776,9 +1032,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // Logout handler
   const logout = () => {
+    try {
+      const mySid = getOrCreateSessionId();
+      setActiveSessions((prev) => {
+        const filtered = prev.filter((s) => s.sessionId !== mySid);
+        try {
+          localStorage.setItem('gds_active_sessions', JSON.stringify(filtered));
+        } catch {}
+        return filtered;
+      });
+    } catch {}
     setCurrentUser(null);
     localStorage.removeItem(SESSION_STORAGE_KEY);
-    showToast('Signed out successfully', 'info');
+    showToast(language === 'km' ? 'បានចាកចេញដោយជោគជ័យ' : 'Signed out successfully', 'info');
   };
 
   // Staff Account Management
@@ -2519,7 +2785,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const updated: StoreSettings = {
       ...settings,
       ...newSettings,
-      StoreName: newSettings.StoreName !== undefined ? newSettings.StoreName.trim() : settings.StoreName,
+      StoreName:
+        newSettings.StoreName !== undefined
+          ? normalizeStoreName(newSettings.StoreName.trim())
+          : normalizeStoreName(settings.StoreName),
       Tagline: newSettings.Tagline !== undefined ? newSettings.Tagline.trim() : settings.Tagline,
       Phone: newSettings.Phone !== undefined ? newSettings.Phone.trim() : settings.Phone,
       Email: newSettings.Email !== undefined ? newSettings.Email.trim() : settings.Email,
@@ -2904,6 +3173,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         emailAlertRecipients,
         sendLowStockEmailAlert,
         refreshAllHistory,
+
+        theme,
+        setTheme,
+        toggleTheme,
+        language,
+        setLanguage,
+        t,
+
+        activeSessions,
+        terminateSession,
+        terminateAllOtherSessions,
       }}
     >
       {children}

@@ -25,6 +25,12 @@ import {
   Bell,
   Send,
   Check,
+  Activity,
+  Laptop,
+  Smartphone,
+  Globe,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -47,6 +53,15 @@ export const SettingsView: React.FC = () => {
     emailAlertRecipients,
     sendLowStockEmailAlert,
     kpis,
+    activeSessions,
+    terminateSession,
+    terminateAllOtherSessions,
+    theme,
+    setTheme,
+    toggleTheme,
+    language,
+    setLanguage,
+    t,
   } = useStore();
 
   // Store form state
@@ -421,6 +436,148 @@ export const SettingsView: React.FC = () => {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Active User Sessions Listing (Requirement #4) */}
+      <div className="bg-white dark:bg-stone-900 p-5 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100 dark:border-stone-800">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              <Activity className="w-4 h-4 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-bold text-stone-900 dark:text-stone-100">
+                  {t('active_sessions')}
+                </h2>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>
+                    {activeSessions.length} {language === 'km' ? 'សម័យកាលសកម្ម' : (activeSessions.length === 1 ? 'Active Session' : 'Active Sessions')}
+                  </span>
+                </span>
+              </div>
+              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                {t('active_sessions_desc')}
+              </p>
+            </div>
+          </div>
+
+          {activeSessions.length > 1 && (
+            <button
+              type="button"
+              onClick={terminateAllOtherSessions}
+              className="px-3 py-1.5 bg-stone-100 dark:bg-stone-800 hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-700 dark:hover:text-red-300 text-stone-700 dark:text-stone-300 rounded-lg text-xs font-semibold border border-stone-200 dark:border-stone-700 transition-colors cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-stone-400" />
+              <span>{t('session_terminate_all_others')}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Sessions Table */}
+        <div className="overflow-x-auto rounded-lg border border-stone-200 dark:border-stone-800">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-stone-50 dark:bg-stone-800/60 text-stone-600 dark:text-stone-400 uppercase font-semibold text-[10px] tracking-wider border-b border-stone-200 dark:border-stone-800">
+              <tr>
+                <th className="px-4 py-2.5">{t('session_user')}</th>
+                <th className="px-4 py-2.5">{t('session_device')}</th>
+                <th className="px-4 py-2.5">{t('session_ip')}</th>
+                <th className="px-4 py-2.5">{t('session_view')}</th>
+                <th className="px-4 py-2.5">{t('session_login_time')}</th>
+                <th className="px-4 py-2.5">{t('session_last_active')}</th>
+                <th className="px-4 py-2.5 text-right">{t('actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+              {activeSessions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-stone-400 dark:text-stone-500">
+                    No active sessions recorded
+                  </td>
+                </tr>
+              ) : (
+                activeSessions.map((sess) => {
+                  const isCurrent = sess.isCurrentSession;
+                  const isMobile = /iOS|Android/i.test(sess.deviceInfo);
+                  return (
+                    <tr
+                      key={sess.sessionId}
+                      className={`transition-colors ${
+                        isCurrent
+                          ? 'bg-rose-50/40 dark:bg-rose-950/20'
+                          : 'hover:bg-stone-50/70 dark:hover:bg-stone-800/40'
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-stone-900 dark:text-stone-100">
+                            #{sess.userNumber}
+                          </span>
+                          <span className="font-medium text-stone-800 dark:text-stone-200">{sess.userName}</span>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${
+                              sess.role === 'admin'
+                                ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300'
+                                : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                            }`}
+                          >
+                            {sess.role === 'admin' ? t('admin') : t('sales_staff')}
+                          </span>
+                          {isCurrent && (
+                            <span className="text-[9px] font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-1.5 py-0.2 rounded border border-rose-200 dark:border-rose-800">
+                              {t('session_current')}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-stone-700 dark:text-stone-300">
+                        <div className="flex items-center gap-1.5">
+                          {isMobile ? (
+                            <Smartphone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                          ) : (
+                            <Laptop className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                          )}
+                          <span>{sess.deviceInfo}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400 text-[11px]">
+                        {sess.ipAddress || 'Cloud Web'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-[11px] font-mono">
+                          {sess.currentView || 'Dashboard'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-[11px] text-stone-600 dark:text-stone-400 font-mono-numbers">
+                        {new Date(sess.loginTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>{t('session_active_now')}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => terminateSession(sess.sessionId)}
+                          className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                            isCurrent
+                              ? 'bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-300 dark:hover:bg-stone-700'
+                              : 'bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800'
+                          }`}
+                        >
+                          {isCurrent ? t('logout') : t('session_terminate')}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -1051,7 +1208,7 @@ export const SettingsView: React.FC = () => {
                 type="text"
                 value={storeName}
                 onChange={(e) => setStoreName(e.target.value)}
-                placeholder="e.g. Girl Dress Shop"
+                placeholder="e.g. Puthipor Shop"
                 className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs font-bold text-stone-900 focus:bg-white focus:ring-2 focus:ring-rose-500"
                 required
               />
@@ -1064,9 +1221,80 @@ export const SettingsView: React.FC = () => {
                 type="text"
                 value={tagline}
                 onChange={(e) => setTagline(e.target.value)}
-                placeholder="e.g. Couture & Casual Dresses for Girls"
+                placeholder="e.g. Exquisite Clothing, Boutique Inventory & POS"
                 className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-xs focus:bg-white focus:ring-2 focus:ring-rose-500"
               />
+            </div>
+
+            {/* Language & Theme System Preferences */}
+            <div className="sm:col-span-2 p-3.5 bg-stone-50 dark:bg-stone-800/60 rounded-xl border border-stone-200 dark:border-stone-700 space-y-3">
+              <div className="text-xs font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-rose-600" />
+                <span>{t('language')} & {t('theme_light')} / {t('theme_dark')}</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-400 mb-1">
+                    {t('language')}
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLanguage('en')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
+                        language === 'en'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-300 dark:border-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      English
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLanguage('km')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
+                        language === 'km'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-300 dark:border-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      ភាសាខ្មែរ (Khmer)
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-400 mb-1">
+                    {t('theme_toggle')}
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTheme('light')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                        theme === 'light'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-300 dark:border-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      <Sun className="w-3.5 h-3.5" />
+                      <span>{t('theme_light')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTheme('dark')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                        theme === 'dark'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-300 dark:border-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                      <span>{t('theme_dark')}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">

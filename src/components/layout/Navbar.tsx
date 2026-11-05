@@ -13,6 +13,9 @@ import {
   ArrowRight,
   ArrowDownToLine,
   Mail,
+  Sun,
+  Moon,
+  Globe,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -30,15 +33,25 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
     isAdmin,
     kpis,
     lowStockItemsList,
+    theme,
+    toggleTheme,
+    language,
+    setLanguage,
+    t,
   } = useStore();
 
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showLangMenu, setShowLangMenu] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
+  const langMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
         setShowNotifications(false);
+      }
+      if (langMenuRef.current && !langMenuRef.current.contains(e.target as Node)) {
+        setShowLangMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -46,44 +59,46 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
   }, []);
 
   const navLinks = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'products', label: 'Products' },
-    { id: 'inventory', label: 'Inventory' },
-    { id: 'pos', label: 'Sales / POS' },
-    { id: 'reports', label: 'Reports' },
+    { id: 'dashboard', label: t('nav_dashboard').split('/')[0].trim() },
+    { id: 'products', label: t('nav_products').split('&')[0].trim() },
+    { id: 'inventory', label: t('nav_inventory').split(' ')[0].trim() },
+    { id: 'pos', label: 'POS' },
+    { id: 'reports', label: t('nav_reports').split('&')[0].trim() },
   ];
 
+  const storeTitle = settings?.StoreName || 'Puthipor Shop';
+
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-stone-200 shadow-xs">
+    <header className="sticky top-0 z-40 bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 shadow-xs transition-colors">
       <div className="flex items-center justify-between px-4 sm:px-6 h-16 max-w-7xl mx-auto">
         {/* Zone 1: Single text element wordmark */}
         <div className="flex items-center gap-3">
           <button
             onClick={onToggleSidebar}
-            className="p-2 -ml-2 text-stone-600 hover:text-stone-900 rounded-lg lg:hidden cursor-pointer"
+            className="p-2 -ml-2 text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white rounded-lg lg:hidden cursor-pointer"
             aria-label="Toggle Navigation"
           >
             <Menu className="w-5 h-5" />
           </button>
           <button
             onClick={() => setCurrentView('dashboard')}
-            className="text-xl sm:text-2xl font-bold font-display tracking-tight text-rose-950 hover:text-rose-700 transition-colors text-left flex items-center gap-2 cursor-pointer"
+            className="text-xl sm:text-2xl font-bold font-display tracking-tight text-rose-950 dark:text-rose-200 hover:text-rose-700 dark:hover:text-rose-300 transition-colors text-left flex items-center gap-2 cursor-pointer"
           >
-            <span className="w-8 h-8 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center text-sm font-serif font-bold italic shadow-xs">
-              {(settings?.StoreName || 'G').charAt(0).toUpperCase()}
+            <span className="w-8 h-8 rounded-full bg-pink-100 dark:bg-pink-950/80 text-pink-600 dark:text-pink-300 flex items-center justify-center text-sm font-serif font-bold italic shadow-xs">
+              {storeTitle.charAt(0).toUpperCase()}
             </span>
-            <span className="hidden xs:inline">{settings?.StoreName || 'Girl Dress Shop'}</span>
+            <span className="hidden xs:inline">{storeTitle}</span>
           </button>
 
           {/* Real-time Cloud persistence badge */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-medium">
+          <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-[11px] font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Firebase Cloud Synced</span>
+            <span>{t('cloud_synced')}</span>
           </div>
         </div>
 
         {/* Zone 2: Clean text navigation links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600">
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600 dark:text-stone-300">
           {navLinks.map((link) => {
             const isActive = currentView === link.id;
             return (
@@ -92,8 +107,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
                 onClick={() => setCurrentView(link.id)}
                 className={`py-1 transition-colors relative whitespace-nowrap cursor-pointer ${
                   isActive
-                    ? 'text-rose-700 font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-rose-600'
-                    : 'hover:text-stone-900'
+                    ? 'text-rose-700 dark:text-rose-400 font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-rose-600'
+                    : 'hover:text-stone-900 dark:hover:text-white'
                 }`}
               >
                 {link.label}
@@ -102,15 +117,81 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
           })}
         </nav>
 
-        {/* Zone 3: Actions + User Profile & Session Validation */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        {/* Zone 3: Actions + Language + Theme + User Profile */}
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Language Selector Dropdown (English & Khmer) */}
+          <div className="relative" ref={langMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowLangMenu((prev) => !prev)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-700/60 text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
+              title={language === 'km' ? 'ប្ដូរភាសា (Change Language)' : 'Change Language'}
+            >
+              <Globe className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
+              <span>{language === 'km' ? 'ខ្មែរ' : 'EN'}</span>
+            </button>
+
+            {showLangMenu && (
+              <div className="absolute right-0 mt-2 w-44 bg-white dark:bg-stone-800 rounded-xl shadow-xl border border-stone-200 dark:border-stone-700 z-50 overflow-hidden py-1 text-xs animate-fadeIn">
+                <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-stone-400 dark:text-stone-500 border-b border-stone-100 dark:border-stone-700">
+                  {t('language')}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLanguage('en');
+                    setShowLangMenu(false);
+                  }}
+                  className={`w-full px-3 py-2 text-left flex items-center justify-between cursor-pointer transition-colors ${
+                    language === 'en'
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold'
+                      : 'text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-700/50'
+                  }`}
+                >
+                  <span>English (EN)</span>
+                  {language === 'en' && <span className="text-xs">✓</span>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLanguage('km');
+                    setShowLangMenu(false);
+                  }}
+                  className={`w-full px-3 py-2 text-left flex items-center justify-between cursor-pointer transition-colors ${
+                    language === 'km'
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold'
+                      : 'text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-700/50'
+                  }`}
+                >
+                  <span>ភាសាខ្មែរ (KM)</span>
+                  {language === 'km' && <span className="text-xs">✓</span>}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Theme Toggle (Light / Dark) */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-2 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-700/60 transition-colors cursor-pointer shadow-2xs"
+            aria-label={t('theme_toggle')}
+            title={theme === 'dark' ? t('theme_light') : t('theme_dark')}
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400 animate-spin-once" />
+            ) : (
+              <Moon className="w-4 h-4 text-stone-600" />
+            )}
+          </button>
+
           {/* Customer Storefront preview toggle */}
           <button
             onClick={() => setCurrentView(currentView === 'shop' ? 'dashboard' : 'shop')}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap border cursor-pointer ${
               currentView === 'shop'
                 ? 'bg-rose-700 text-white border-rose-700'
-                : 'bg-white text-stone-700 border-stone-300 hover:bg-stone-50'
+                : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-200 border-stone-300 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-700/60'
             }`}
           >
             <Store className="w-3.5 h-3.5" />

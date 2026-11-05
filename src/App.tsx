@@ -81,7 +81,7 @@ const MainAppLayout: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 flex flex-col text-stone-900 font-sans">
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex flex-col text-stone-900 dark:text-stone-100 font-sans transition-colors duration-150">
       {/* Top Navigation */}
       <Navbar onToggleSidebar={() => setSidebarOpen((prev) => !prev)} />
 

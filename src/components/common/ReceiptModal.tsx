@@ -48,7 +48,7 @@ export const ReceiptModal: React.FC = () => {
             {/* Store branding */}
             <div className="text-center pb-4 border-b border-stone-200">
               <h2 className="text-xl font-bold font-display tracking-tight text-stone-900">
-                {settings.StoreName}
+                {settings?.StoreName || 'Puthipor Shop'}
               </h2>
               <p className="text-xs text-stone-500 mt-0.5">{settings.Tagline}</p>
               <p className="text-xs text-stone-600 mt-1">{settings.Address}</p>

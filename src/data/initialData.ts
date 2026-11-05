@@ -62,18 +62,18 @@ export const INITIAL_PRICE_CATEGORIES: PriceCategory[] = [
 ];
 
 export const INITIAL_SETTINGS: StoreSettings = {
-  StoreName: 'Girl Dress Shop',
-  Tagline: 'Exquisite Couture & Everyday Dresses for Girls',
+  StoreName: 'Puthipor Shop',
+  Tagline: 'Exquisite Clothing, Boutique Inventory & POS',
   Phone: '+1 (555) 345-9876',
-  Email: 'support@girldressshop.com',
+  Email: 'support@puthiporshop.com',
   Address: '742 Boutique Blossom Avenue, Suite 101, New York, NY 10012',
   Currency: '$',
   LowStockThreshold: 5,
   TaxRate: 0,
   ActiveRole: 'admin',
-  ReceiptFooterMessage: 'Thank you for shopping at Girl Dress Shop! Returns accepted within 14 days.',
+  ReceiptFooterMessage: 'Thank you for shopping at Puthipor Shop! Returns accepted within 14 days.',
   EmailAlertsEnabled: true,
-  AlertEmailRecipients: 'admin@girldressshop.com',
+  AlertEmailRecipients: 'admin@puthiporshop.com',
 };
 
 // Initial system administrator account for first-time access

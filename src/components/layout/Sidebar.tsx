@@ -40,46 +40,46 @@ interface MenuSection {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const { currentView, setCurrentView, kpis, role, isAdmin, settings } = useStore();
+  const { currentView, setCurrentView, kpis, role, isAdmin, settings, language, t } = useStore();
 
   const menuSections: MenuSection[] = [
     {
-      group: 'Store & Catalog',
+      group: t('group_store_catalog'),
       items: [
         {
           id: 'dashboard',
-          label: 'Home / Dashboard',
+          label: t('nav_dashboard'),
           icon: LayoutDashboard,
           badge: isAdmin && kpis.lowStockCount > 0 ? `${kpis.lowStockCount} alert` : undefined,
           badgeColor: 'alert',
         },
-        { id: 'products', label: 'Products & Variants', icon: Shirt, badge: kpis.totalProducts },
-        { id: 'inventory', label: 'Inventory Overview', icon: Boxes },
-        { id: 'shop', label: 'Customer Online Shop', icon: Store },
+        { id: 'products', label: t('nav_products'), icon: Shirt, badge: kpis.totalProducts },
+        { id: 'inventory', label: t('nav_inventory'), icon: Boxes },
+        { id: 'shop', label: t('nav_shop'), icon: Store },
       ],
     },
     {
-      group: 'Stock Movements',
+      group: t('group_stock_movements'),
       items: [
-        { id: 'inventory-in', label: 'Inventory IN (Receive)', icon: ArrowDownToLine, highlight: true },
-        { id: 'inventory-out', label: 'Inventory OUT (Issue)', icon: ArrowUpFromLine },
-        { id: 'pos', label: 'Sales / POS Terminal', icon: ShoppingCart, highlight: true },
+        { id: 'inventory-in', label: t('nav_inventory_in'), icon: ArrowDownToLine, highlight: true },
+        { id: 'inventory-out', label: t('nav_inventory_out'), icon: ArrowUpFromLine },
+        { id: 'pos', label: t('nav_pos'), icon: ShoppingCart, highlight: true },
       ],
     },
     {
-      group: 'Operations & Records',
+      group: t('group_operations'),
       items: [
-        { id: 'orders', label: 'Orders & Receipts', icon: Receipt },
-        { id: 'customers', label: 'Customers', icon: Users },
-        { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
+        { id: 'orders', label: t('nav_orders'), icon: Receipt },
+        { id: 'customers', label: t('nav_customers'), icon: Users },
+        { id: 'reports', label: t('nav_reports'), icon: BarChart3 },
       ],
     },
     {
-      group: 'Admin Configuration',
+      group: t('group_admin'),
       adminOnly: true,
       items: [
-        { id: 'categories', label: 'Dress Types & Categories', icon: Tags, adminOnly: true },
-        { id: 'settings', label: 'Admin Settings', icon: Settings, adminOnly: true },
+        { id: 'categories', label: t('nav_categories'), icon: Tags, adminOnly: true },
+        { id: 'settings', label: t('nav_settings'), icon: Settings, adminOnly: true },
       ],
     },
   ];
@@ -98,6 +98,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     onClose();
   };
 
+  const storeTitle = settings?.StoreName || 'Puthipor Shop';
+
   return (
     <>
       {/* Mobile Backdrop */}
@@ -110,33 +112,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
       {/* Sidebar Panel */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-white border-r border-stone-200 flex flex-col transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-white dark:bg-stone-900 border-r border-stone-200 dark:border-stone-800 flex flex-col transition-all duration-200 ease-in-out lg:static lg:translate-x-0 ${
           isOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'
         }`}
       >
         {/* Brand header */}
-        <div className="p-5 border-b border-stone-200 flex items-center justify-between">
+        <div className="p-5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white flex items-center justify-center font-serif text-base font-bold shadow-xs">
-              {(settings?.StoreName || 'GD')
+              {storeTitle
                 .split(' ')
                 .map((w) => w[0])
                 .join('')
                 .slice(0, 2)
-                .toUpperCase()}
+                .toUpperCase() || 'PS'}
             </div>
             <div className="min-w-0">
-              <div className="text-base font-bold font-display tracking-tight text-stone-900 leading-tight truncate max-w-[160px]">
-                {settings?.StoreName || 'Girl Dress Shop'}
+              <div className="text-base font-bold font-display tracking-tight text-stone-900 dark:text-stone-100 leading-tight truncate max-w-[160px]">
+                {storeTitle}
               </div>
-              <div className="text-xs text-stone-500 font-medium truncate max-w-[160px]">
-                {settings?.Tagline || 'Boutique Inventory & POS'}
+              <div className="text-xs text-stone-500 dark:text-stone-400 font-medium truncate max-w-[160px]">
+                {settings?.Tagline || (language === 'km' ? 'ហាងសម្លៀកបំពាក់ ភុទ្ធីពរ' : 'Clothing Store & POS')}
               </div>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg lg:hidden cursor-pointer"
+            className="p-1.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 rounded-lg lg:hidden cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -146,7 +148,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
           {visibleMenuSections.map((section, idx) => (
             <div key={idx}>
-              <div className="px-3 mb-2 text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+              <div className="px-3 mb-2 text-[11px] font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider">
                 {section.group}
               </div>
               <div className="space-y-0.5">
@@ -159,14 +161,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                       onClick={() => handleSelect(item.id)}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer ${
                         isActive
-                          ? 'bg-rose-50 text-rose-900 font-semibold'
-                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-50'
+                          ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 font-semibold'
+                          : 'text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white hover:bg-stone-50 dark:hover:bg-stone-800'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Icon
                           className={`w-4 h-4 shrink-0 ${
-                            isActive ? 'text-rose-600' : 'text-stone-400'
+                            isActive ? 'text-rose-600 dark:text-rose-400' : 'text-stone-400'
                           }`}
                         />
                         <span className="truncate">{item.label}</span>
@@ -175,8 +177,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         <span
                           className={`text-[11px] font-mono-numbers px-1.5 py-0.5 rounded font-semibold ${
                             item.badgeColor === 'alert'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
-                              : 'text-stone-500 bg-stone-100'
+                              ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 animate-pulse'
+                              : 'text-stone-500 dark:text-stone-400 bg-stone-100 dark:bg-stone-800'
                           }`}
                         >
                           {item.badge}
@@ -194,14 +196,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Role & Quick Stock Indicator Footer */}
-        <div className="p-4 border-t border-stone-200 bg-stone-50/70 text-xs text-stone-600 space-y-2">
+        <div className="p-4 border-t border-stone-200 dark:border-stone-800 bg-stone-50/70 dark:bg-stone-800/40 text-xs text-stone-600 dark:text-stone-300 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-stone-500">Access Role:</span>
+            <span className="text-stone-500 dark:text-stone-400">{t('session_role')}:</span>
             <span
               className={`inline-flex items-center gap-1 font-semibold capitalize px-2 py-0.5 rounded text-[11px] ${
                 role === 'admin'
-                  ? 'bg-purple-100 text-purple-800 font-bold'
-                  : 'bg-blue-100 text-blue-800'
+                  ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800'
+                  : 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
               }`}
             >
               {role === 'admin' ? (
@@ -209,16 +211,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               ) : (
                 <User className="w-3 h-3" />
               )}
-              <span>{role === 'admin' ? 'Administrator' : 'Sales Staff'}</span>
+              <span>{role === 'admin' ? t('admin') : t('sales_staff')}</span>
             </span>
           </div>
           <div className="flex items-center justify-between font-mono-numbers text-[11px]">
-            <span className="text-stone-500">Total Stock Units:</span>
-            <span className="font-bold text-stone-800">{kpis.totalStockUnits}</span>
+            <span className="text-stone-500 dark:text-stone-400">{t('stock')} ({t('units')}):</span>
+            <span className="font-bold text-stone-800 dark:text-stone-200">{kpis.totalStockUnits}</span>
           </div>
           {kpis.lowStockCount > 0 && (
-            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded flex items-center justify-between">
-              <span>Low Stock Alerts</span>
+            <div className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-1 rounded flex items-center justify-between">
+              <span>{t('low_stock')}</span>
               <span className="font-bold font-mono-numbers">{kpis.lowStockCount}</span>
             </div>
           )}

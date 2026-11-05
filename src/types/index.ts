@@ -185,3 +185,22 @@ export interface CartItem {
   CurrentStock: number;
   ImageURL: string;
 }
+
+export type AppTheme = 'light' | 'dark';
+export type AppLanguage = 'en' | 'km';
+
+export interface ActiveSession {
+  sessionId: string;
+  userId: string;
+  userNumber: string;
+  userName: string;
+  role: UserRole;
+  deviceInfo: string;
+  browser: string;
+  ipAddress?: string;
+  loginTime: string;
+  lastActiveTime: string;
+  currentView: string;
+  isCurrentSession?: boolean;
+}
+

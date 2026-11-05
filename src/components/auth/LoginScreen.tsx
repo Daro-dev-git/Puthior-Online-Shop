@@ -3,7 +3,7 @@ import { useStore } from '../../context/StoreContext';
 import { Lock, User, Sparkles, ArrowRight, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
-  const { loginWithNumber } = useStore();
+  const { loginWithNumber, settings, language, setLanguage, t } = useStore();
   const [userNumber, setUserNumber] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -16,11 +16,11 @@ export const LoginScreen: React.FC = () => {
 
     const trimmedNumber = userNumber.trim();
     if (!trimmedNumber) {
-      setErrorMsg('Please enter your assigned User Number or Staff ID');
+      setErrorMsg(language === 'km' ? 'សូមបញ្ចូលលេខសម្គាល់គណនី ឬឈ្មោះបុគ្គលិក' : 'Please enter your assigned User Number or Staff ID');
       return;
     }
     if (!password) {
-      setErrorMsg('Please enter your password');
+      setErrorMsg(language === 'km' ? 'សូមបញ្ចូលពាក្យសម្ងាត់' : 'Please enter your password');
       return;
     }
 
@@ -37,8 +37,32 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
+  const storeTitle = settings?.StoreName || 'Puthipor Shop';
+
   return (
     <div className="min-h-screen bg-stone-900 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden select-none">
+      {/* Language Switcher in top corner */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 bg-stone-800/80 border border-stone-700 rounded-lg p-1 text-xs">
+        <button
+          type="button"
+          onClick={() => setLanguage('en')}
+          className={`px-2.5 py-1 rounded font-medium cursor-pointer transition-colors ${
+            language === 'en' ? 'bg-pink-600 text-white font-bold' : 'text-stone-400 hover:text-white'
+          }`}
+        >
+          English
+        </button>
+        <button
+          type="button"
+          onClick={() => setLanguage('km')}
+          className={`px-2.5 py-1 rounded font-medium cursor-pointer transition-colors ${
+            language === 'km' ? 'bg-pink-600 text-white font-bold' : 'text-stone-400 hover:text-white'
+          }`}
+        >
+          ភាសាខ្មែរ
+        </button>
+      </div>
+
       {/* Background Ambience */}
       <div className="absolute inset-0 bg-[radial-gradient(#ec4899_1px,transparent_1px)] [background-size:24px_24px] opacity-10 pointer-events-none" />
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-pink-500/20 rounded-full blur-3xl pointer-events-none" />
@@ -51,10 +75,10 @@ export const LoginScreen: React.FC = () => {
             <Sparkles className="w-8 h-8" />
           </div>
           <h1 className="text-3xl font-serif font-bold text-white tracking-tight">
-            Girl Dress Shop
+            {storeTitle}
           </h1>
           <p className="text-stone-400 text-xs sm:text-sm mt-1">
-            Boutique Staff & Administrator Portal
+            {settings?.Tagline || (language === 'km' ? 'ហាងសម្លៀកបំពាក់ ភុទ្ធីពរ · គ្រប់គ្រងស្តុក និង POS' : 'Clothing Store & POS System')}
           </p>
         </div>
 
